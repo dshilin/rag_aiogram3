@@ -31,8 +31,10 @@ sdist/
 
 # Data
 data/documents/*
-data/embeddings/*
 !data/documents/.gitkeep
+!data/documents/pdf_docs/.gitkeep
+!data/documents/md_docs/.gitkeep
+data/embeddings/*
 !data/embeddings/.gitkeep
 
 # Logs
