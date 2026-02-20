@@ -53,5 +53,5 @@ python main.py
 
 - **aiogram 3** - фреймворк для Telegram ботов
 - **LangChain** - работа с RAG
-- **ChromaDB** - векторное хранилище
+- **FAISS** - векторное хранилище (CPU)
 - **HuggingFace** - эмбеддинги

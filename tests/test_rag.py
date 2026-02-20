@@ -1,11 +1,27 @@
 import pytest
+import shutil
+from pathlib import Path
 
 from src.rag.service import RAGService
 
 
 @pytest.fixture
-def rag_service():
+def test_index_path(tmp_path):
+    """Создать временную директорию для индекса"""
+    index_path = tmp_path / "faiss_test"
+    yield index_path
+    if index_path.exists():
+        shutil.rmtree(index_path)
+
+
+@pytest.fixture
+def rag_service(test_index_path, monkeypatch):
     """Создать RAG сервис для тестов"""
+    # Переопределяем путь к индексу для тестов
+    monkeypatch.setattr(
+        "src.rag.service.settings.chroma_db_path",
+        str(test_index_path.parent),
+    )
     service = RAGService()
     yield service
     service.clear()

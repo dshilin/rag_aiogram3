@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     top_k: int = 3
 
     # Vector Store
-    chroma_db_path: str = "./data/embeddings"
+    chroma_db_path: str = "./data/embeddings"  # Путь для хранения FAISS индекса
 
     # Logging
     log_level: str = "INFO"
