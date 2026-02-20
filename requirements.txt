@@ -10,7 +10,9 @@ chromadb>=0.4.0
 pymupdf>=1.23.0
 markdownify>=0.11.0
 
-# Embeddings
+# Embeddings (CPU-only, без CUDA)
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.0.0
 sentence-transformers>=2.2.0
 
 # LLM
