@@ -19,7 +19,37 @@ import re
 import sys
 from pathlib import Path
 
-from loguru import logger
+try:
+    from loguru import logger
+except Exception:
+    import logging
+    logging.basicConfig(
+        stream=sys.stdout,
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)-8s | %(message)s",
+    )
+    _logger = logging.getLogger("clean_markdown")
+
+    class _SimpleLogger:
+        def remove(self):
+            return None
+
+        def add(self, *args, **kwargs):
+            return None
+
+        def info(self, msg, *a, **k):
+            _logger.info(msg)
+
+        def warning(self, msg, *a, **k):
+            _logger.warning(msg)
+
+        def error(self, msg, *a, **k):
+            _logger.error(msg)
+
+        def success(self, msg, *a, **k):
+            _logger.info(msg)
+
+    logger = _SimpleLogger()
 
 
 def setup_logging():
@@ -76,14 +106,13 @@ def clean_markdown_content(content: str) -> str:
     lines = content.split('\n')
     cleaned_lines = []
     prev_line = None
-    page_marker = None
     consecutive_empty = 0
-    
-    for line in lines:
-        # Сохраняем маркеры страниц
-        if line.strip().startswith("<!-- Page"):
-            # Извлекаем номер страницы
-            match = re.search(r'Page\s*(\d+)', line)
+
+    # Проходим с индексом, чтобы смотреть вперед/назад для склеивания строк
+    for idx, raw_line in enumerate(lines):
+        # Сохраняем маркеры страниц (оставляем в каноническом виде)
+        if raw_line.strip().startswith("<!-- Page"):
+            match = re.search(r'Page\s*(\d+)', raw_line)
             if match:
                 page_marker = f"<!-- Page {match.group(1)} -->"
                 cleaned_lines.append(page_marker)
@@ -91,17 +120,50 @@ def clean_markdown_content(content: str) -> str:
                 prev_line = ""
                 consecutive_empty = 1
             continue
-        
-        # Очищаем строку
-        cleaned = clean_line(line)
-        
+
+        stripped = raw_line.strip()
+
+        # Пустые строки — сохраняем, но контролируем подряд идущие
+        if not stripped:
+            consecutive_empty += 1
+            if consecutive_empty > 2:
+                continue
+            cleaned_lines.append("")
+            prev_line = ""
+            continue
+
+        # Попытка склеить однословную строку с предыдущей, если это не маркер и предыдущая строка не пустая
+        # Условие: текущая строка — одно слово (без пробелов), не маркированный пункт, и предыдущая реальная строка есть
+        if " " not in stripped and cleaned_lines:
+            last = cleaned_lines[-1]
+            if last != "" and not isinstance(last, type(None)) and not last.strip().startswith("<!-- Page"):
+                # Не склеивать с предыдущей строкой, если она похожа на запись оглавления (много точек + номер страницы)
+                if re.search(r'\.{2,}\s*\d+\s*$', last):
+                    # предыдущая строка похожа на запись в оглавлении — пропустить склейку
+                    pass
+                else:
+                    # Исключаем явные маркеры списка/заголовков
+                    if not re.match(r'^[\-\*\d\)\.]', stripped):
+                        # Если предыдущая строка не заканчивается на точку/вопрос/воскл/двоиточие, то вероятно перенос в середине предложения
+                        if not re.search(r'[\.\!\?\:\—\-]$', last.strip()):
+                            # Если предыдущая строка заканчивается дефисом (перенос слова), склеиваем без пробела
+                            if last.endswith("-") or last.endswith("‑"):
+                                cleaned_lines[-1] = last.rstrip("-‑") + stripped
+                            else:
+                                cleaned_lines[-1] = last + " " + stripped
+                            prev_line = cleaned_lines[-1]
+                            consecutive_empty = 0
+                            continue
+
+        # Обычная очистка строки
+        cleaned = clean_line(raw_line)
         if cleaned is None:
             continue
-        
+
         # Пропускаем дубликаты подряд идущих строк
         if cleaned == prev_line and cleaned != "":
             continue
-        
+
         # Контролируем количество пустых строк подряд (максимум 2)
         if cleaned == "":
             consecutive_empty += 1
@@ -109,7 +171,7 @@ def clean_markdown_content(content: str) -> str:
                 continue
         else:
             consecutive_empty = 0
-        
+
         cleaned_lines.append(cleaned)
         prev_line = cleaned
     
@@ -143,10 +205,31 @@ def process_file(file_path: Path) -> tuple[int, int]:
     cleaned_size = len(cleaned_content)
     
     # Записываем только если есть изменения
+    dry_run = getattr(process_file, "dry_run", False)
+    do_backup = getattr(process_file, "do_backup", True)
+
     if cleaned_size < original_size:
-        file_path.write_text(cleaned_content, encoding="utf-8")
         reduction = ((original_size - cleaned_size) / original_size) * 100
-        logger.success(f"✓ {file_path.name}: {original_size} → {cleaned_size} символов (-{reduction:.1f}%)")
+        if dry_run:
+            logger.info(f"(dry-run) ✓ {file_path.name}: {original_size} → {cleaned_size} символов (-{reduction:.1f}%)")
+        else:
+            # Создаём .bak резервную копию если нужно
+            if do_backup:
+                # file.md -> file.md.bak, если занято -> file.md.bak1, ...
+                suffix = file_path.suffix + ".bak"
+                backup_path = file_path.with_suffix(suffix)
+                idx = 1
+                while backup_path.exists():
+                    backup_path = file_path.with_suffix(suffix + str(idx))
+                    idx += 1
+                try:
+                    backup_path.write_bytes(file_path.read_bytes())
+                    logger.info(f"Создана резервная копия: {backup_path.name}")
+                except Exception as e:
+                    logger.warning(f"Не удалось создать резервную копию {backup_path}: {e}")
+
+            file_path.write_text(cleaned_content, encoding="utf-8")
+            logger.success(f"✓ {file_path.name}: {original_size} → {cleaned_size} символов (-{reduction:.1f}%)")
     else:
         logger.info(f"= {file_path.name}: без изменений")
     
@@ -217,8 +300,27 @@ def main():
         default=Path("data/documents/md_docs"),
         help="Директория с Markdown файлами (по умолчанию: data/documents/md_docs)",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Не изменять файлы, только показать, что бы изменилось",
+    )
+    parser.add_argument(
+        "--no-backup",
+        action="store_true",
+        help="Не создавать резервные .bak копии перед перезаписью",
+    )
     
     args = parser.parse_args()
+
+    # Добавляем опции dry-run и backup в функцию process_file через атрибуты
+    process_file.dry_run = False
+    process_file.do_backup = True
+
+    if args.dry_run:
+        process_file.dry_run = True
+    if args.no_backup:
+        process_file.do_backup = False
     
     setup_logging()
     
