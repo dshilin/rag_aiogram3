@@ -19,7 +19,7 @@ def rag_service(test_index_path, monkeypatch):
     """Создать RAG сервис для тестов"""
     # Переопределяем путь к индексу для тестов
     monkeypatch.setattr(
-        "src.rag.service.settings.chroma_db_path",
+        "src.rag.service.settings.embeddings_db_path",
         str(test_index_path.parent),
     )
     service = RAGService()

@@ -22,8 +22,8 @@ class RAGService:
             encode_kwargs={"normalize_embeddings": True},
         )
         
-        self.index_path = Path(settings.chroma_db_path) / "faiss_index"
-        self.meta_path = Path(settings.chroma_db_path) / "index_meta.pkl"
+        self.index_path = Path(settings.embeddings_db_path) / "faiss_index"
+        self.meta_path = Path(settings.embeddings_db_path) / "index_meta.pkl"
         
         # Загружаем существующий индекс или создаем новый
         if self.index_path.exists() and self.meta_path.exists():
