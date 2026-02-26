@@ -105,16 +105,21 @@ class RAGService:
             metadatas: Список метаданных для каждого текста
                       (source, page, chunk_id, etc.)
         """
+        if not texts:
+            return
+
         self._ensure_index()
 
-        documents = []
-        for i, text in enumerate(texts):
-            metadata = metadatas[i] if metadatas and i < len(metadatas) else {}
-            documents.append(Document(page_content=text, metadata=metadata))
+        documents = [
+            Document(
+                page_content=text,
+                metadata=metadatas[i] if metadatas and i < len(metadatas) else {}
+            )
+            for i, text in enumerate(texts)
+        ]
 
-        if documents:
-            self.vectorstore.add_documents(documents)
-            self._save_index()
+        self.vectorstore.add_documents(documents)
+        self._save_index()
 
     def query(self, question: str, top_k: Optional[int] = None) -> Optional[str]:
         """Выполнить поиск и вернуть ответ (без метаданных, для совместимости)"""
@@ -147,43 +152,31 @@ class RAGService:
         if self.vectorstore is None:
             return []
 
-        if top_k is None:
-            top_k = settings.top_k
+        k = top_k or settings.top_k
+        results = self.vectorstore.similarity_search_with_score(question, k=k)
 
-        # Поиск с оценкой схожести
-        results = self.vectorstore.similarity_search_with_score(question, k=top_k)
-
-        if not results:
-            return []
-
-        chunk_results = []
-        for doc, score in results:
-            if score < score_threshold:
-                continue
-
-            metadata = doc.metadata
-            chunk_result = ChunkResult(
+        chunk_results = [
+            ChunkResult(
                 content=doc.page_content,
-                source=metadata.get("source", "unknown"),
-                page=metadata.get("page", 0),
-                chunk_id=metadata.get("chunk_id", metadata.get("chunk_index", "unknown")),
+                source=doc.metadata.get("source", "unknown"),
+                page=doc.metadata.get("page", 0),
+                chunk_id=doc.metadata.get("chunk_id", doc.metadata.get("chunk_index", "unknown")),
                 score=score,
             )
-            chunk_results.append(chunk_result)
+            for doc, score in results
+            if score >= score_threshold
+        ]
 
-        # Сортируем по score (лучшие сначала)
-        chunk_results.sort(key=lambda x: x.score, reverse=True)
-
-        return chunk_results
+        return sorted(chunk_results, key=lambda x: x.score, reverse=True)
 
     def _save_index(self):
         """Сохранить индекс на диск"""
         self.index_path.mkdir(parents=True, exist_ok=True)
         self.vectorstore.save_local(str(self.index_path))
 
-        # Сохраняем метаданные
+        meta = {"doc_count": len(self.vectorstore.index_to_docstore_id)}
         with open(self.meta_path, "wb") as f:
-            pickle.dump({"doc_count": len(self.vectorstore.index_to_docstore_id)}, f)
+            pickle.dump(meta, f)
 
     def get_document_count(self) -> int:
         """Получить количество документов в хранилище"""
@@ -198,8 +191,6 @@ class RAGService:
         """Очистить векторное хранилище"""
         self.vectorstore = None
         if self.index_path.exists():
-            # FAISS сохраняет в несколько файлов
-            import shutil
             shutil.rmtree(self.index_path, ignore_errors=True)
         if self.meta_path.exists():
             os.remove(self.meta_path)
