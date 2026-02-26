@@ -11,8 +11,12 @@ class Settings(BaseSettings):
     # Telegram Bot
     bot_token: str
 
-    # LLM
+    # LLM - OpenAI
     openai_api_key: str | None = None
+
+    # LLM - YandexGPT
+    yandex_folder_id: str | None = None
+    yandex_api_key: str | None = None
 
     # RAG Settings
     embedding_model: str = "all-MiniLM-L6-v2"
