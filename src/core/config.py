@@ -11,12 +11,21 @@ class Settings(BaseSettings):
     # Telegram Bot
     bot_token: str
 
+    # LLM - Provider Selection
+    llm_provider: str = "yandex"  # 'yandex', 'vsegpt', etc.
+    llm_model: str | None = None  # Модель (если None, используется модель по умолчанию)
+    llm_temperature: float = 0.7
+    llm_max_tokens: int = 300
+
     # LLM - OpenAI
     openai_api_key: str | None = None
 
     # LLM - YandexGPT
     yandex_folder_id: str | None = None
     yandex_api_key: str | None = None
+
+    # LLM - VseGPT.ru
+    vsegpt_api_key: str | None = None
 
     # RAG Settings
     embedding_model: str = "all-MiniLM-L6-v2"
@@ -28,7 +37,7 @@ class Settings(BaseSettings):
     embeddings_db_path: str = "./data/embeddings"  # Путь для хранения FAISS индекса
 
     # Logging
-    log_level: str = "INFO"
+    log_level: str = "DEBUG"  # Recommended: DEBUG for development, INFO for production
 
 
 settings = Settings()

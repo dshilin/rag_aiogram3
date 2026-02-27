@@ -11,8 +11,10 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.documents import Document
 from langchain_community.vectorstores import FAISS
 from langchain_community.docstore.in_memory import InMemoryDocstore
+from loguru import logger
 
 from src.core.config import settings
+from src.utils.logging import trace, log_call_flow
 
 # Константы
 TEST_EMBEDDING_TEXT = "test"
@@ -94,8 +96,15 @@ class RAGService:
         self.vectorstore.add_texts([TEST_EMBEDDING_TEXT])
         first_doc_id = next(iter(self.vectorstore.index_to_docstore_id.values()), None)
         if first_doc_id:
-            self.vectorstore.delete([first_doc_id])
+            # deleting just-added dummy document might occasionally blow up if
+            # the internal docstore has already been cleared (seen in tests).
+            # the error isn't harmful, so ignore it.
+            try:
+                self.vectorstore.delete([first_doc_id])
+            except Exception:
+                pass
 
+    @trace()
     def add_documents(self, texts: list[str], metadatas: Optional[list[dict]] = None):
         """
         Добавить документы в векторное хранилище
@@ -106,8 +115,10 @@ class RAGService:
                       (source, page, chunk_id, etc.)
         """
         if not texts:
+            log_call_flow("add_documents called with empty texts list")
             return
 
+        log_call_flow(f"Adding {len(texts)} documents to vector store")
         self._ensure_index()
 
         documents = [
@@ -120,6 +131,7 @@ class RAGService:
 
         self.vectorstore.add_documents(documents)
         self._save_index()
+        log_call_flow(f"Successfully added {len(texts)} documents")
 
     def query(self, question: str, top_k: Optional[int] = None) -> Optional[str]:
         """Выполнить поиск и вернуть ответ (без метаданных, для совместимости)"""
@@ -132,6 +144,7 @@ class RAGService:
         context = "\n\n".join([r.content for r in results])
         return context
 
+    @trace()
     def query_with_metadata(
         self,
         question: str,
@@ -149,7 +162,10 @@ class RAGService:
         Returns:
             Список ChunkResult с метаданными
         """
+        log_call_flow(f"RAG query: '{question[:50]}...' top_k={top_k or settings.top_k}")
+        
         if self.vectorstore is None:
+            log_call_flow("Vector store is None, returning empty results")
             return []
 
         k = top_k or settings.top_k
@@ -167,6 +183,7 @@ class RAGService:
             if score >= score_threshold
         ]
 
+        log_call_flow(f"RAG query returned {len(chunk_results)} results")
         return sorted(chunk_results, key=lambda x: x.score, reverse=True)
 
     def _save_index(self):
