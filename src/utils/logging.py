@@ -27,6 +27,20 @@ def generate_request_id() -> str:
     return str(uuid.uuid4())[:8]
 
 
+def _add_request_id(record):
+    """Добавляет request_id в запись лога"""
+    record["extra"]["request_id"] = get_request_id()
+    return True
+
+
+def _category_filter(category_name):
+    """Создаёт фильтр по категории"""
+    def filter_func(record):
+        record["extra"]["request_id"] = get_request_id()
+        return record["extra"].get("category") == category_name
+    return filter_func
+
+
 class CallTracer:
     """Декоратор для трассировки вызовов функций/методов"""
 
@@ -119,24 +133,19 @@ class CallTracer:
         return result_str
 
 
-def _request_id_filter(record):
-    """Фильтр для добавления request_id в record, если отсутствует"""
-    record["extra"].setdefault("request_id", get_request_id())
-    return True
-
-
 def setup_logging():
     """Настроить логирование"""
     logger.remove()
 
-    # Добавляем обработчик с фильтром, который добавляет request_id
+    # Консольный вывод
     logger.add(
         sys.stdout,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | <magenta>{extra[request_id]}</magenta> - <level>{message}</level>",
         level=settings.log_level,
-        filter=_request_id_filter,
+        filter=_add_request_id,
     )
 
+    # Основной лог файл
     logger.add(
         "logs/app_{time:YYYY-MM-DD}.log",
         format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} | {extra[request_id]} | {message}",
@@ -144,9 +153,10 @@ def setup_logging():
         rotation="10 MB",
         retention="7 days",
         compression="zip",
-        filter=_request_id_filter,
+        filter=_add_request_id,
     )
 
+    # Лог ошибок
     logger.add(
         "logs/errors_{time:YYYY-MM-DD}.log",
         format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} | {extra[request_id]} | {message}",
@@ -154,25 +164,27 @@ def setup_logging():
         rotation="10 MB",
         retention="30 days",
         compression="zip",
-        filter=_request_id_filter,
+        filter=_add_request_id,
     )
 
+    # Лог сообщений пользователей
     logger.add(
         "logs/user_messages_{time:YYYY-MM-DD}.log",
         format="{time:YYYY-MM-DD HH:mm:ss} | {message}",
         level="INFO",
         rotation="10 MB",
         retention="30 days",
-        filter=lambda record: record["extra"].get("category") == "user_message",
+        filter=_category_filter("user_message"),
     )
 
+    # Лог потока вызовов
     logger.add(
         "logs/call_flow_{time:YYYY-MM-DD}.log",
         format="{time:YYYY-MM-DD HH:mm:ss} | {message}",
         level="DEBUG",
         rotation="10 MB",
         retention="7 days",
-        filter=lambda record: record["extra"].get("category") == "call_flow",
+        filter=_category_filter("call_flow"),
     )
 
     return logger
@@ -182,13 +194,13 @@ def log_user_message(user_id: int, username: Optional[str], message_text: str) -
     """Логировать сообщение пользователя"""
     logger.info(
         f"USER [{user_id}] @{username or 'no_username'}: {message_text}",
-        extra={"category": "user_message"}
+        category="user_message"
     )
 
 
 def log_call_flow(message: str) -> None:
     """Логировать информацию о потоке вызовов"""
-    logger.debug(message, extra={"category": "call_flow"})
+    logger.debug(message, category="call_flow")
 
 
 # Экспортируем декоратор
