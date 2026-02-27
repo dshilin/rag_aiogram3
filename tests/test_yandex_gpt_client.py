@@ -18,7 +18,7 @@ class DummyResponse:
 
 
 def test_build_model_uri_variants(monkeypatch):
-    # ensure we can compute a URI from a folder id
+    # Проверяем, что мы можем вычислить URI из folder id
     monkeypatch.setattr(settings, "yandex_folder_id", "folder123")
 
     client = YandexGPTClient()
@@ -27,7 +27,7 @@ def test_build_model_uri_variants(monkeypatch):
     client2 = YandexGPTClient(model="yandexgpt-lite")
     assert client2._build_model_uri() == "gpt://folder123/yandexgpt-lite/latest"
 
-    # if the model is already a complete URI, it should be used unchanged
+    # если модель уже полный URI, он должен быть использован без изменений
     raw = "gpt://folder123/special-model/v1"
     client3 = YandexGPTClient(model=raw)
     assert client3._build_model_uri() == raw
@@ -65,14 +65,14 @@ def test_ask_sends_correct_payload(monkeypatch):
     assert captured['json']['modelUri'] == "gpt://folder123/yandexgpt-lite/latest"
     assert captured['headers']['Authorization'] == "Bearer token"
 
-    # make sure an explicit URI is respected
+    # проверяем, что явный URI сохраняется
     client2 = YandexGPTClient(model="gpt://folder123/custom/v2")
     result2 = client2.ask("hi")
     assert captured['json']['modelUri'] == "gpt://folder123/custom/v2"
 
 
 def test_ask_reports_unconfigured(monkeypatch):
-    # if folder id or api key missing, we get a warning string
+    # если folder id или api key отсутствуют, получаем предупреждение
     monkeypatch.setattr(settings, "yandex_folder_id", None)
     monkeypatch.setattr(settings, "yandex_api_key", None)
     client = YandexGPTClient()

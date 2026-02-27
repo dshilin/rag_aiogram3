@@ -10,19 +10,17 @@ from src.utils.logging import trace, log_call_flow
 class YandexGPTClient(LLMClient):
     """Клиент для работы с YandexGPT API через API-ключ.
 
-    The original implementation constructed the model URI using the
-    ``yandex_folder_id`` setting and the ``model`` argument passed during
-    initialization.  If the user accidentally provided a full URI as the
-    model name (for example by copying the `modelUri` value from a notebook
-    example into ``LLM_MODEL``), the resulting string would look like
-    ``gpt://<folder>/gpt://<folder>/yandexgpt/latest/latest``.  The API then
-    returned ``400 invalid model_uri`` which is exactly the error reported by
-    the user.
+    Оригинальная реализация строила modelUri с использованием настройки
+    ``yandex_folder_id`` и аргумента ``model``, переданного при инициализации.
+    Если пользователь случайно указывал полный URI как название модели
+    (например, скопировав значение `modelUri` из примера в notebook в ``LLM_MODEL``),
+    результирующая строка выглядела бы как ``gpt://<folder>/gpt://<folder>/yandexgpt/latest/latest``.
+    API возвращало ``400 invalid model_uri`` — это именно та ошибка, о которой
+    сообщал пользователь.
 
-    To make the client more robust we now normalize the model identifier in
-    :meth:`_build_model_uri`.  Both bare model names and complete URIs are
-    accepted, and we validate that a folder ID is available before making the
-    request.
+    Чтобы сделать клиент более устойчивым, теперь мы нормализуем идентификатор модели
+    в методе :meth:`_build_model_uri`. Принимаются как простые названия моделей,
+    так и полные URI, и перед запросом проверяется наличие folder ID.
     """
 
     def __init__(
@@ -53,14 +51,14 @@ class YandexGPTClient(LLMClient):
         return self._model
 
     def _build_model_uri(self) -> str:
-        """Compose the ``modelUri`` field sent to Yandex.
+        """Формирует поле ``modelUri`` для отправки в Yandex.
 
-        The field has the form ``gpt://<folder_id>/<model>/latest``.
+        Поле имеет вид ``gpt://<folder_id>/<model>/latest``.
         """
-        # Use default model if not specified
+        # Используем модель по умолчанию, если не указана
         model_name = self._model if self._model else "yandexgpt"
-        
-        # Build URI: gpt://folder_id/model_name/latest
+
+        # Строим URI: gpt://folder_id/model_name/latest
         return f"gpt://{settings.yandex_folder_id}/{model_name}/latest"
 
     @trace(show_result=False)
@@ -89,13 +87,12 @@ class YandexGPTClient(LLMClient):
             "Content-Type": "application/json",
         }
 
-        # build the model URI; the user may supply either a simple model
-        # name ("yandexgpt", "yandexgpt-lite" etc.) or a full URI
-        # ("gpt://<folder>/<model>/latest").  If the latter is provided we
-        # respect it verbatim, otherwise we glue the folder ID and the latest
-        # tag.  This avoids a common misconfiguration where LLM_MODEL is set to
-        # a complete URI and the client would prepend another prefix,
-        # resulting in an invalid model_uri error from the API.
+        # Строим modelURI; пользователь может указать как простое название модели
+        # ("yandexgpt", "yandexgpt-lite" и т.д.), так и полный URI
+        # ("gpt://<folder>/<model>/latest"). Если указано последнее — используем
+        # его как есть, иначе склеиваем folder ID и тег latest. Это избегает
+        # частой ошибки конфигурации, когда LLM_MODEL установлен в полный URI,
+        # и клиент добавляет ещё один префикс, что приводит к ошибке invalid model_uri от API.
         model_uri = self._build_model_uri()
 
         payload = {
@@ -128,8 +125,8 @@ class YandexGPTClient(LLMClient):
             else:
                 error_detail = response.text
 
-                # common misconfiguration: user supplied a bad model URI or set
-                # LLM_MODEL incorrectly
+                # Частая ошибка конфигурации: пользователь указал неверный model URI или
+                # неправильно установил LLM_MODEL
                 if response.status_code == 400 and "invalid model_uri" in error_detail:
                     logger.warning(f"YandexGPT invalid model_uri: {error_detail}")
                     return (

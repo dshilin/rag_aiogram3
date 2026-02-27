@@ -11,8 +11,8 @@ class Settings(BaseSettings):
     # Telegram Bot
     bot_token: str
 
-    # LLM - Provider Selection
-    llm_provider: str = "yandex"  # 'yandex', 'vsegpt', etc.
+    # LLM - Выбор провайдера
+    llm_provider: str = "yandex"  # 'yandex', 'vsegpt', и т.д.
     llm_model: str | None = None  # Модель (если None, используется модель по умолчанию)
     llm_temperature: float = 0.7
     llm_max_tokens: int = 300
@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     embeddings_db_path: str = "./data/embeddings"  # Путь для хранения FAISS индекса
 
     # Logging
-    log_level: str = "DEBUG"  # Recommended: DEBUG for development, INFO for production
+    log_level: str = "DEBUG"  # Рекомендуется: DEBUG для разработки, INFO для продакшена
 
 
 settings = Settings()

@@ -9,7 +9,7 @@ from src.utils.logging import setup_logging, set_request_id, generate_request_id
 
 async def main():
     """Точка входа приложения"""
-    # Set main request ID for startup logs
+    # Устанавливаем основной request ID для логов запуска
     set_request_id(generate_request_id())
     
     # Настройка логирования

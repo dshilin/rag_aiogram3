@@ -80,11 +80,11 @@ async def cmd_add(message: Message):
 @trace()
 async def handle_text(message: Message):
     """Обработка текстовых сообщений - поиск через RAG + генерация ответа через LLM"""
-    # Generate request ID for this conversation
+    # Генерируем request ID для этой беседы
     request_id = generate_request_id()
     set_request_id(request_id)
 
-    # Log user message
+    # Логируем сообщение пользователя
     log_user_message(
         user_id=message.from_user.id,
         username=message.from_user.username,
@@ -132,7 +132,7 @@ async def handle_text(message: Message):
 @trace()
 async def handle_document(message: Message):
     """Обработка документов для добавления в базу знаний"""
-    # Generate request ID for this operation
+    # Генерируем request ID для этой операции
     request_id = generate_request_id()
     set_request_id(request_id)
 

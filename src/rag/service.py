@@ -96,9 +96,9 @@ class RAGService:
         self.vectorstore.add_texts([TEST_EMBEDDING_TEXT])
         first_doc_id = next(iter(self.vectorstore.index_to_docstore_id.values()), None)
         if first_doc_id:
-            # deleting just-added dummy document might occasionally blow up if
-            # the internal docstore has already been cleared (seen in tests).
-            # the error isn't harmful, so ignore it.
+            # Удаление только что добавленного фиктивного документа может вызвать ошибку,
+            # если внутренний docstore уже был очищен (наблюдалось в тестах).
+            # Ошибка не критична, поэтому игнорируем её.
             try:
                 self.vectorstore.delete([first_doc_id])
             except Exception:

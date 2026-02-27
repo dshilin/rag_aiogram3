@@ -8,27 +8,27 @@ from loguru import logger
 
 from src.core.config import settings
 
-# Context variable for request/call tracking
+# Контекстная переменная для отслеживания запросов/вызовов
 _request_id: ContextVar[str] = ContextVar("request_id", default="main")
 
 
 def get_request_id() -> str:
-    """Get current request ID"""
+    """Получить текущий request ID"""
     return _request_id.get()
 
 
 def set_request_id(request_id: str) -> None:
-    """Set request ID for current context"""
+    """Установить request ID для текущего контекста"""
     _request_id.set(request_id)
 
 
 def generate_request_id() -> str:
-    """Generate new request ID"""
+    """Сгенерировать новый request ID"""
     return str(uuid.uuid4())[:8]
 
 
 class CallTracer:
-    """Decorator for tracing function/method calls"""
+    """Декоратор для трассировки вызовов функций/методов"""
 
     def __init__(self, show_args: bool = True, show_result: bool = True):
         self.show_args = show_args
@@ -40,7 +40,7 @@ class CallTracer:
             request_id = get_request_id()
             func_name = f"{func.__module__}.{func.__qualname__}"
 
-            # Log entry
+            # Логирование входа
             if self.show_args:
                 args_info = self._format_args(args, kwargs)
                 logger.debug(f"[{request_id}] ENTER → {func_name}({args_info})")
@@ -63,7 +63,7 @@ class CallTracer:
             request_id = get_request_id()
             func_name = f"{func.__module__}.{func.__qualname__}"
 
-            # Log entry
+            # Логирование входа
             if self.show_args:
                 args_info = self._format_args(args, kwargs)
                 logger.debug(f"[{request_id}] ENTER → {func_name}({args_info})")
@@ -86,10 +86,10 @@ class CallTracer:
 
     @staticmethod
     def _format_args(args: tuple, kwargs: dict) -> str:
-        """Format function arguments for logging"""
+        """Форматировать аргументы функции для логирования"""
         parts = []
 
-        # Skip first arg if it's self/cls
+        # Пропускаем первый аргумент, если это self/cls
         start_idx = 0
         if args and args[0].__class__.__name__ in ("self", "cls"):
             start_idx = 1
@@ -110,7 +110,7 @@ class CallTracer:
 
     @staticmethod
     def _format_result(result: Any) -> str:
-        """Format function result for logging"""
+        """Форматировать результат функции для логирования"""
         if result is None:
             return "None"
         result_str = str(result)
@@ -120,7 +120,7 @@ class CallTracer:
 
 
 def _request_id_filter(record):
-    """Filter to add request_id to record if not present"""
+    """Фильтр для добавления request_id в record, если отсутствует"""
     record["extra"].setdefault("request_id", get_request_id())
     return True
 
@@ -128,8 +128,8 @@ def _request_id_filter(record):
 def setup_logging():
     """Настроить логирование"""
     logger.remove()
-    
-    # Add handler with filter that injects request_id
+
+    # Добавляем обработчик с фильтром, который добавляет request_id
     logger.add(
         sys.stdout,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | <magenta>{extra[request_id]}</magenta> - <level>{message}</level>",
@@ -179,7 +179,7 @@ def setup_logging():
 
 
 def log_user_message(user_id: int, username: Optional[str], message_text: str) -> None:
-    """Log user message"""
+    """Логировать сообщение пользователя"""
     logger.info(
         f"USER [{user_id}] @{username or 'no_username'}: {message_text}",
         extra={"category": "user_message"}
@@ -187,9 +187,9 @@ def log_user_message(user_id: int, username: Optional[str], message_text: str) -
 
 
 def log_call_flow(message: str) -> None:
-    """Log call flow information"""
+    """Логировать информацию о потоке вызовов"""
     logger.debug(message, extra={"category": "call_flow"})
 
 
-# Export decorator
+# Экспортируем декоратор
 trace = CallTracer
