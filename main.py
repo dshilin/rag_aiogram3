@@ -4,22 +4,25 @@ from loguru import logger
 
 from src.bot.dispatcher import dp, bot
 from src.bot.handlers import router
-from src.utils.logging import setup_logging
+from src.utils.logging import setup_logging, set_request_id, generate_request_id
 
 
 async def main():
     """Точка входа приложения"""
+    # Устанавливаем основной request ID для логов запуска
+    set_request_id(generate_request_id())
+    
     # Настройка логирования
     setup_logging()
-    
+
     # Регистрация роутеров
     dp.include_router(router)
-    
+
     logger.info("Бот запускается...")
-    
+
     # Удаление webhook при запуске (для polling)
     await bot.delete_webhook(drop_pending_updates=True)
-    
+
     # Запуск polling
     await dp.start_polling(bot)
 
