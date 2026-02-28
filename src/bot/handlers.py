@@ -4,23 +4,28 @@ from aiogram.filters import Command
 
 from src.rag.service import RAGService
 from src.llm import get_llm_client, SYSTEM_PROMPT_AN
-from src.llm.openai_client import OpenAIClient
-from src.utils.logging import log_call_flow
 from src.core.config import settings
 
 router = Router()
 rag_service = RAGService()
 
-# Инициализация LLM клиента (используем OpenAI по умолчанию)
+# Инициализация LLM клиента на основе настроек из .env
 llm_client = None
 USE_LLM = False
 
 try:
-    # Пытаемся создать OpenAI клиент (он использует SYSTEM_PROMPT_AN по умолчанию)
-    llm_client = OpenAIClient(
-        model="gpt-3.5-turbo",
-        temperature=0.3,
-        max_tokens=500,
+    # Получаем провайдера и модель из настроек
+    provider = settings.llm_provider
+    model = settings.llm_model if settings.llm_model else None
+    temperature = settings.llm_temperature
+    max_tokens = settings.llm_max_tokens
+    
+    # Создаем клиент через фабрику
+    llm_client = get_llm_client(
+        provider=provider,
+        model=model,
+        temperature=temperature,
+        max_tokens=max_tokens,
     )
     USE_LLM = True
 except (ValueError, Exception) as e:
