@@ -67,24 +67,30 @@ class YandexGPTClient(LLMClient):
         return f"gpt://{settings.yandex_folder_id}/{model_name}/latest"
 
     @trace(show_result=False)
-    def ask(self, question: str, context: Optional[str] = None) -> str:
+    def ask(
+        self,
+        question: str,
+        context: Optional[str] = None,
+        sources: Optional[list[str]] = None,
+    ) -> str:
         """
         Отправить запрос к YandexGPT
 
         Args:
             question: Вопрос пользователя
             context: Контекст из RAG (опционально)
+            sources: Источники из RAG для цитирования (опционально)
 
         Returns:
             Текст ответа от модели или сообщение об ошибке
         """
         log_call_flow(f"YandexGPT request: '{question[:50]}...' with context={context is not None}")
-        
+
         if not settings.yandex_folder_id or not settings.yandex_api_key:
             logger.warning("YandexGPT credentials not configured")
             return "⚠️ YandexGPT не настроен. Проверьте переменные окружения YANDEX_FOLDER_ID и YANDEX_API_KEY."
 
-        prompt = self._build_prompt(question, context)
+        prompt = self._build_prompt(question, context, sources)
         log_call_flow(f"Built prompt: '{prompt[:50]}...'")
 
         headers = {

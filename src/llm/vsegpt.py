@@ -43,13 +43,19 @@ class VseGPTClient(LLMClient):
         return self._model
 
     @trace(show_result=False)
-    def ask(self, question: str, context: Optional[str] = None) -> str:
+    def ask(
+        self,
+        question: str,
+        context: Optional[str] = None,
+        sources: Optional[list[str]] = None,
+    ) -> str:
         """
         Отправить запрос к VseGPT.ru
 
         Args:
             question: Вопрос пользователя
             context: Контекст из RAG (опционально)
+            sources: Источники из RAG для цитирования (опционально)
 
         Returns:
             Текст ответа от модели или сообщение об ошибке
@@ -60,7 +66,7 @@ class VseGPTClient(LLMClient):
             logger.warning("VseGPT API key not configured")
             return "⚠️ VseGPT.ru не настроен. Проверьте переменную окружения VSEGPT_API_KEY."
 
-        prompt = self._build_prompt(question, context)
+        prompt = self._build_prompt(question, context, sources)
         log_call_flow(f"Built prompt: '{prompt[:50]}...'")
 
         headers = {
