@@ -5,6 +5,14 @@ from aiogram.filters import Command
 from src.rag.service import RAGService
 from src.llm import get_llm_client, SYSTEM_PROMPT_AN
 from src.core.config import settings
+from src.utils.logging import (
+    log_user_message,
+    log_call_flow,
+    trace,
+    set_request_id,
+    generate_request_id,
+)
+from loguru import logger
 
 router = Router()
 rag_service = RAGService()
