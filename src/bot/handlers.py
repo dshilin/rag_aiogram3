@@ -5,6 +5,8 @@ from aiogram.filters import Command
 from src.rag.service import RAGService
 from src.llm import get_llm_client, SYSTEM_PROMPT_AN
 from src.llm.openai_client import OpenAIClient
+from src.utils.logging import log_call_flow
+from src.core.config import settings
 
 router = Router()
 rag_service = RAGService()
@@ -29,9 +31,10 @@ except (ValueError, Exception) as e:
 @router.message(Command("start"))
 async def cmd_start(message: Message):
     """Обработка команды /start"""
+    log_call_flow(f"Command /start from user {message.from_user.id}")
     await message.answer(
-        "👋 Привет! Я RAG-бот.\n\n"
-        "Задайте мне вопрос, и я найду ответ в базе знаний.\n"
+        f"👋 Привет! Я RAG-бот с {settings.llm_provider.upper()}.\n\n"
+        "Задайте мне вопрос, и я найду ответ в базе знаний и сгенерирую ответ с помощью LLM.\n"
         "Используйте /help для получения дополнительной информации."
     )
 
@@ -39,26 +42,32 @@ async def cmd_start(message: Message):
 @router.message(Command("help"))
 async def cmd_help(message: Message):
     """Обработка команды /help"""
+    log_call_flow(f"Command /help from user {message.from_user.id}")
     await message.answer(
         "📚 Доступные команды:\n\n"
         "/start - Запустить бота\n"
         "/help - Показать эту справку\n"
         "/add - Добавить документ (отправьте файл после команды)\n"
         "/status - Показать статус базы знаний\n\n"
-        "Просто отправьте сообщение с вопросом, и я поищу ответ."
+        "Просто отправьте сообщение с вопросом, и я поищу ответ в базе знаний."
     )
 
 
 @router.message(Command("status"))
 async def cmd_status(message: Message):
     """Обработка команды /status"""
+    log_call_flow(f"Command /status from user {message.from_user.id}")
     count = rag_service.get_document_count()
-    await message.answer(f"📊 В базе знаний: {count} документов")
+    await message.answer(
+        f"📊 В базе знаний: {count} документов\n"
+        f"🤖 LLM провайдер: {settings.llm_provider}"
+    )
 
 
 @router.message(Command("add"))
 async def cmd_add(message: Message):
     """Обработка команды /add"""
+    log_call_flow(f"Command /add from user {message.from_user.id}")
     await message.answer(
         "📎 Отправьте мне текстовый файл (.txt, .md) или просто текст, "
         "который нужно добавить в базу знаний."
@@ -126,21 +135,31 @@ async def handle_text(message: Message):
 
         await message.answer(response)
     except Exception as e:
+        logger.error(f"Error processing message: {e}")
         await message.answer(f"⚠️ Произошла ошибка: {str(e)}")
 
 
 @router.message(F.document)
 async def handle_document(message: Message):
     """Обработка документов для добавления в базу знаний"""
+    # Генерируем request ID для этой операции
+    request_id = generate_request_id()
+    set_request_id(request_id)
+
+    log_call_flow(f"Document received from user {message.from_user.id}: {message.document.file_name}")
+
     await message.answer("📥 Загружаю документ...")
-    
+
     try:
         file = await message.document.get_file()
         content = await file.read()
         text = content.decode("utf-8")
-        
+
+        log_call_flow(f"Document loaded, size: {len(text)} chars")
         rag_service.add_documents([text])
-        
+
+        log_call_flow(f"Document added to RAG by user {message.from_user.id}")
         await message.answer("✅ Документ успешно добавлен в базу знаний!")
     except Exception as e:
+        logger.error(f"Error processing document: {e}")
         await message.answer(f"⚠️ Ошибка при обработке документа: {str(e)}")

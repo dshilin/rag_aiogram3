@@ -24,7 +24,7 @@ class TestPageMarkers:
         content = "<!-- Page 5 -->"
         markers = extract_page_markers(content)
         assert len(markers) == 1
-        assert markers[0][0] == 5  # page number
+        assert markers[0][0] == 5  # номер страницы
 
     def test_extract_header_marker(self):
         """Извлечение маркера из заголовка"""

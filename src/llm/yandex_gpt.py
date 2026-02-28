@@ -26,8 +26,9 @@ class YandexGPTClient(LLMClient):
     def __init__(
         self,
         model: str = "yandexgpt",
-        temperature: float = 0.7,
-        max_tokens: int = 300,
+        temperature: float = 0.3,
+        max_tokens: int = 500,
+        system_prompt: Optional[str] = None,
     ):
         """
         Инициализация клиента YandexGPT
@@ -36,10 +37,14 @@ class YandexGPTClient(LLMClient):
             model: Название модели (yandexgpt-lite или yandexgpt)
             temperature: Температура генерации (0.0 - 1.0)
             max_tokens: Максимальное количество токенов в ответе
+            system_prompt: Системный промт (по умолчанию используется SYSTEM_PROMPT_AN)
         """
-        self._model = model
-        self.temperature = temperature
-        self.max_tokens = max_tokens
+        super().__init__(
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            system_prompt=system_prompt,
+        )
         self.api_url = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
 
     @property
