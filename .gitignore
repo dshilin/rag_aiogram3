@@ -38,6 +38,7 @@ data/documents/*
 data/embeddings/*
 !data/embeddings/.gitkeep
 data/data_testing/*
+data/md_ver0/*
 
 # Logs
 logs/*
