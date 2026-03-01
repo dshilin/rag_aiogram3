@@ -1,6 +1,7 @@
 from aiogram import Router, F
-from aiogram.types import Message
+from aiogram.types import Message, ReplyKeyboardRemove
 from aiogram.filters import Command
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 from src.rag.service import RAGService
 from src.llm import get_llm_client, SYSTEM_PROMPT_AN
@@ -18,6 +19,14 @@ from loguru import logger
 
 router = Router()
 rag_service = RAGService()
+
+# Клавиатура с кнопками сессии
+session_keyboard = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="🔄 Новая сессия"), KeyboardButton(text="⏹️ Завершить сессию")]
+    ],
+    resize_keyboard=True
+)
 
 # Инициализация LLM клиента на основе настроек из .env
 llm_client = None
@@ -48,15 +57,16 @@ async def cmd_start(message: Message):
     """Обработка команды /start — начало новой сессии"""
     user_id = message.from_user.id
     log_call_flow(f"Command /start from user {user_id}")
-    
+
     # Начинаем новую сессию
     session_manager.start_new_session(user_id)
-    
+
     await message.answer(
         f"👋 Привет! Я RAG-бот с {settings.llm_provider.upper()}.\n\n"
         "Задайте мне вопрос, и я найду ответ в базе знаний и сгенерирую ответ с помощью LLM.\n"
         "Используйте /help для получения дополнительной информации.\n\n"
-        "🔄 Сессия начата — я буду помнить контекст нашего диалога."
+        "🔄 Сессия начата — я буду помнить контекст нашего диалога.",
+        reply_markup=session_keyboard
     )
 
 
@@ -65,13 +75,43 @@ async def cmd_end(message: Message):
     """Обработка команды /end — завершение сессии"""
     user_id = message.from_user.id
     log_call_flow(f"Command /end from user {user_id}")
-    
+
     # Завершаем сессию
     session_manager.end_session(user_id)
-    
+
     await message.answer(
         "✅ Сессия завершена. История диалога очищена.\n"
-        "Используйте /start для начала новой сессии."
+        "Используйте /start для начала новой сессии.",
+        reply_markup=ReplyKeyboardRemove()
+    )
+
+
+@router.message(F.text == "🔄 Новая сессия")
+async def btn_new_session(message: Message):
+    """Обработка кнопки 'Новая сессия'"""
+    user_id = message.from_user.id
+    log_call_flow(f"Button 'Новая сессия' from user {user_id}")
+
+    session_manager.start_new_session(user_id)
+
+    await message.answer(
+        "🔄 Новая сессия начата. История диалога очищена.",
+        reply_markup=session_keyboard
+    )
+
+
+@router.message(F.text == "⏹️ Завершить сессию")
+async def btn_end_session(message: Message):
+    """Обработка кнопки 'Завершить сессию'"""
+    user_id = message.from_user.id
+    log_call_flow(f"Button 'Завершить сессию' from user {user_id}")
+
+    session_manager.end_session(user_id)
+
+    await message.answer(
+        "✅ Сессия завершена. История диалога очищена.\n"
+        "Нажмите /start для начала новой сессии.",
+        reply_markup=ReplyKeyboardRemove()
     )
 
 
@@ -86,6 +126,9 @@ async def cmd_help(message: Message):
         "/help - Показать эту справку\n"
         "/add - Добавить документ (отправьте файл после команды)\n"
         "/status - Показать статус базы знаний\n\n"
+        "🔘 Кнопки управления сессией:\n"
+        "🔄 Новая сессия — начать диалог заново\n"
+        "⏹️ Завершить сессию — очистить историю\n\n"
         "Просто отправьте сообщение с вопросом, и я поищу ответ в базе знаний.\n"
         "В рамках сессии я помню контекст нашего диалога."
     )
@@ -126,8 +169,6 @@ async def handle_text(message: Message):
         # Обработка по категориям
         if category == QueryCategory.GREETING:
             response = "👋 Привет! Я RAG-бот с литературой АН. Задайте вопрос по теме выздоровления."
-            session_manager.add_message(user_id, "user", query)
-            session_manager.add_message(user_id, "assistant", response)
             await message.answer(response)
             return
 
@@ -139,21 +180,17 @@ async def handle_text(message: Message):
                 "Базовый текст АН, стр. XXI\n\n"
                 "Рекомендуем посетить ближайшую группу АН в вашем регионе."
             )
-            session_manager.add_message(user_id, "user", query)
-            session_manager.add_message(user_id, "assistant", response)
             await message.answer(response)
             return
 
         elif category == QueryCategory.OFF_TOPIC:
             response = "Этот вопрос не относится к литературе АН."
-            session_manager.add_message(user_id, "user", query)
-            session_manager.add_message(user_id, "assistant", response)
             await message.answer(response)
             return
 
         # category == QueryCategory.AN_QUESTION — продолжаем с RAG
 
-    # Получаем историю сессии
+    # Получаем историю сессии (только для AN_QUESTION)
     session_history = session_manager.get_history(user_id, limit=10)
 
     await message.answer("🔍 Ищу ответ в литературе АН...")
@@ -211,7 +248,7 @@ async def handle_text(message: Message):
                     "Попробуйте переформулировать вопрос или добавьте больше документов в базу знаний."
                 )
 
-        # Сохраняем сообщение пользователя и ответ в сессию
+        # Сохраняем в сессию только вопросы по теме АН
         session_manager.add_message(user_id, "user", query)
         session_manager.add_message(user_id, "assistant", response)
 
