@@ -12,6 +12,7 @@ from src.utils.logging import (
     set_request_id,
     generate_request_id,
 )
+from src.bot.session import session_manager
 from loguru import logger
 
 router = Router()
@@ -43,12 +44,33 @@ except (ValueError, Exception) as e:
 
 @router.message(Command("start"))
 async def cmd_start(message: Message):
-    """Обработка команды /start"""
-    log_call_flow(f"Command /start from user {message.from_user.id}")
+    """Обработка команды /start — начало новой сессии"""
+    user_id = message.from_user.id
+    log_call_flow(f"Command /start from user {user_id}")
+    
+    # Начинаем новую сессию
+    session_manager.start_new_session(user_id)
+    
     await message.answer(
         f"👋 Привет! Я RAG-бот с {settings.llm_provider.upper()}.\n\n"
         "Задайте мне вопрос, и я найду ответ в базе знаний и сгенерирую ответ с помощью LLM.\n"
-        "Используйте /help для получения дополнительной информации."
+        "Используйте /help для получения дополнительной информации.\n\n"
+        "🔄 Сессия начата — я буду помнить контекст нашего диалога."
+    )
+
+
+@router.message(Command("end"))
+async def cmd_end(message: Message):
+    """Обработка команды /end — завершение сессии"""
+    user_id = message.from_user.id
+    log_call_flow(f"Command /end from user {user_id}")
+    
+    # Завершаем сессию
+    session_manager.end_session(user_id)
+    
+    await message.answer(
+        "✅ Сессия завершена. История диалога очищена.\n"
+        "Используйте /start для начала новой сессии."
     )
 
 
@@ -58,11 +80,13 @@ async def cmd_help(message: Message):
     log_call_flow(f"Command /help from user {message.from_user.id}")
     await message.answer(
         "📚 Доступные команды:\n\n"
-        "/start - Запустить бота\n"
+        "/start - Начать новую сессию (сбросить историю диалога)\n"
+        "/end - Завершить текущую сессию\n"
         "/help - Показать эту справку\n"
         "/add - Добавить документ (отправьте файл после команды)\n"
         "/status - Показать статус базы знаний\n\n"
-        "Просто отправьте сообщение с вопросом, и я поищу ответ в базе знаний."
+        "Просто отправьте сообщение с вопросом, и я поищу ответ в базе знаний.\n"
+        "В рамках сессии я помню контекст нашего диалога."
     )
 
 
@@ -90,7 +114,11 @@ async def cmd_add(message: Message):
 @router.message(F.text)
 async def handle_text(message: Message):
     """Обработка текстовых сообщений - поиск через RAG + LLM"""
+    user_id = message.from_user.id
     query = message.text
+
+    # Получаем историю сессии
+    session_history = session_manager.get_history(user_id, limit=10)
 
     await message.answer("🔍 Ищу ответ в литературе АН...")
 
@@ -112,11 +140,12 @@ async def handle_text(message: Message):
 
                 context = "\n\n---\n\n".join(context_parts)
 
-                # Запрос к LLM с системным промтом АН
+                # Запрос к LLM с системным промтом АН и историей диалога
                 answer = llm_client.ask(
                     question=query,
                     context=context,
                     sources=sources,
+                    conversation_history=session_history,
                 )
 
                 # Добавляем источники
@@ -145,6 +174,10 @@ async def handle_text(message: Message):
                     "😕 Не нашел информацию по вашему запросу.\n\n"
                     "Попробуйте переформулировать вопрос или добавьте больше документов в базу знаний."
                 )
+
+        # Сохраняем сообщение пользователя и ответ в сессию
+        session_manager.add_message(user_id, "user", query)
+        session_manager.add_message(user_id, "assistant", response)
 
         await message.answer(response)
     except Exception as e:

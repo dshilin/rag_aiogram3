@@ -90,6 +90,7 @@ class LLMClient(ABC):
         question: str,
         context: Optional[str] = None,
         sources: Optional[List[str]] = None,
+        conversation_history: Optional[List[dict]] = None,
     ) -> str:
         """
         Отправить запрос к LLM
@@ -98,6 +99,7 @@ class LLMClient(ABC):
             question: Вопрос пользователя
             context: Контекст из RAG (опционально)
             sources: Источники из RAG для цитирования (опционально)
+            conversation_history: История диалога для поддержания контекста (опционально)
 
         Returns:
             Текст ответа от модели или сообщение об ошибке
@@ -109,19 +111,29 @@ class LLMClient(ABC):
         question: str,
         context: Optional[str] = None,
         sources: Optional[List[str]] = None,
+        conversation_history: Optional[List[dict]] = None,
     ) -> str:
         """
-        Построить промпт с контекстом и источниками
+        Построить промпт с контекстом, источниками и историей диалога
 
         Args:
             question: Вопрос пользователя
             context: Контекст из RAG (опционально)
             sources: Источники для цитирования (опционально)
+            conversation_history: История диалога (опционально)
 
         Returns:
             Сформированный промпт
         """
         parts = []
+
+        # Добавляем историю диалога
+        if conversation_history:
+            history_text = "История диалога:\n"
+            for msg in conversation_history:
+                role = "Пользователь" if msg["role"] == "user" else "Ассистент"
+                history_text += f"{role}: {msg['content']}\n"
+            parts.append(history_text)
 
         # Добавляем контекст
         if context:

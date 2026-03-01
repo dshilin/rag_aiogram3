@@ -1,5 +1,5 @@
 import requests
-from typing import Optional
+from typing import Optional, List
 from loguru import logger
 
 from src.core.config import settings
@@ -72,6 +72,7 @@ class YandexGPTClient(LLMClient):
         question: str,
         context: Optional[str] = None,
         sources: Optional[list[str]] = None,
+        conversation_history: Optional[List[dict]] = None,
     ) -> str:
         """
         Отправить запрос к YandexGPT
@@ -80,6 +81,7 @@ class YandexGPTClient(LLMClient):
             question: Вопрос пользователя
             context: Контекст из RAG (опционально)
             sources: Источники из RAG для цитирования (опционально)
+            conversation_history: История диалога для поддержания контекста (опционально)
 
         Returns:
             Текст ответа от модели или сообщение об ошибке
@@ -90,7 +92,7 @@ class YandexGPTClient(LLMClient):
             logger.warning("YandexGPT credentials not configured")
             return "⚠️ YandexGPT не настроен. Проверьте переменные окружения YANDEX_FOLDER_ID и YANDEX_API_KEY."
 
-        prompt = self._build_prompt(question, context, sources)
+        prompt = self._build_prompt(question, context, sources, conversation_history)
         log_call_flow(f"Built prompt: '{prompt[:50]}...'")
 
         headers = {
@@ -106,6 +108,20 @@ class YandexGPTClient(LLMClient):
         # и клиент добавляет ещё один префикс, что приводит к ошибке invalid model_uri от API.
         model_uri = self._build_model_uri()
 
+        # Формируем сообщения для API
+        messages = []
+        
+        # Добавляем системный промт
+        messages.append({"role": "system", "text": self.system_prompt})
+        
+        # Добавляем историю диалога, если есть
+        if conversation_history:
+            for msg in conversation_history:
+                messages.append({"role": msg["role"], "text": msg["content"]})
+        
+        # Добавляем текущий вопрос
+        messages.append({"role": "user", "text": prompt})
+
         payload = {
             "modelUri": model_uri,
             "completionOptions": {
@@ -113,9 +129,7 @@ class YandexGPTClient(LLMClient):
                 "temperature": self.temperature,
                 "maxTokens": self.max_tokens,
             },
-            "messages": [
-                {"role": "user", "text": prompt}
-            ],
+            "messages": messages,
         }
 
         try:
