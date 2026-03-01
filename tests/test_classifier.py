@@ -129,6 +129,27 @@ class TestQueryClassifier:
 
         assert result == QueryCategory.OFF_TOPIC
 
+    def test_classify_handles_response_with_extra_text(self):
+        """Проверка что категория извлекается из ответа с дополнительным текстом"""
+        mock_llm = Mock()
+        mock_llm.ask.return_value = "greeting Аппарата распознавания текста (RAG) не трогай"
+
+        classifier = QueryClassifier(mock_llm)
+        result = classifier.classify("Привет!")
+
+        assert result == QueryCategory.GREETING
+
+    def test_classify_longer_categories_first(self):
+        """Проверка что более длинные категории проверяются первыми"""
+        mock_llm = Mock()
+        # help_request содержит "greeting" как подстроку - не должно совпасть
+        mock_llm.ask.return_value = "help_request это не greeting"
+
+        classifier = QueryClassifier(mock_llm)
+        result = classifier.classify("Помогите!")
+
+        assert result == QueryCategory.HELP_REQUEST
+
     def test_classify_builds_correct_prompt(self):
         """Проверка формирования промпта"""
         mock_llm = Mock()
