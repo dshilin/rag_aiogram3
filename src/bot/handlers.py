@@ -13,6 +13,7 @@ from src.utils.logging import (
     generate_request_id,
 )
 from src.bot.session import session_manager
+from src.bot.classifier import classify_query, QueryCategory
 from loguru import logger
 
 router = Router()
@@ -113,9 +114,44 @@ async def cmd_add(message: Message):
 
 @router.message(F.text)
 async def handle_text(message: Message):
-    """Обработка текстовых сообщений - поиск через RAG + LLM"""
+    """Обработка текстовых сообщений - классификация + RAG + LLM"""
     user_id = message.from_user.id
     query = message.text
+
+    # Классификация запроса (если LLM доступен)
+    if USE_LLM and llm_client:
+        category = classify_query(llm_client, query)
+        log_call_flow(f"Query category: {category.value}")
+
+        # Обработка по категориям
+        if category == QueryCategory.GREETING:
+            response = "👋 Привет! Я RAG-бот с литературой АН. Задайте вопрос по теме выздоровления."
+            session_manager.add_message(user_id, "user", query)
+            session_manager.add_message(user_id, "assistant", response)
+            await message.answer(response)
+            return
+
+        elif category == QueryCategory.HELP_REQUEST:
+            response = (
+                "В нашей литературе на эту тему сказано:\n\n"
+                "«Анонимные Наркоманы — это сообщество мужчин и женщин, которые делятся своим опытом, "
+                "силой и надеждой, чтобы помочь друг другу выздороветь от наркомании.»\n\n"
+                "Базовый текст АН, стр. XXI\n\n"
+                "Рекомендуем посетить ближайшую группу АН в вашем регионе."
+            )
+            session_manager.add_message(user_id, "user", query)
+            session_manager.add_message(user_id, "assistant", response)
+            await message.answer(response)
+            return
+
+        elif category == QueryCategory.OFF_TOPIC:
+            response = "Этот вопрос не относится к литературе АН."
+            session_manager.add_message(user_id, "user", query)
+            session_manager.add_message(user_id, "assistant", response)
+            await message.answer(response)
+            return
+
+        # category == QueryCategory.AN_QUESTION — продолжаем с RAG
 
     # Получаем историю сессии
     session_history = session_manager.get_history(user_id, limit=10)
