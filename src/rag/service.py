@@ -59,24 +59,99 @@ class RAGService:
             encode_kwargs={"normalize_embeddings": True},
         )
 
+        # Пути к индексам (поддержка старого и нового формата)
         self.index_path = Path(settings.embeddings_db_path) / "faiss_index"
         self.meta_path = Path(settings.embeddings_db_path) / "index_meta.pkl"
+        
+        # Новый формат индекса (из build_faiss_index.py)
+        self.new_index_path = Path(settings.embeddings_db_path) / "faiss.index"
+        self.new_meta_path = Path(settings.embeddings_db_path) / "index_metadata.json"
+        self.chunks_meta_path = Path(settings.embeddings_db_path) / "chunks_metadata.json"
 
         # Загружаем существующий индекс или создаем новый
-        if self.index_path.exists() and self.meta_path.exists():
-            self.vectorstore = FAISS.load_local(
-                str(self.index_path),
-                self.embeddings,
-                allow_dangerous_deserialization=True,
-            )
-        else:
-            self.vectorstore = None
+        self.vectorstore = self._load_index()
 
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=settings.chunk_size,
             chunk_overlap=settings.chunk_overlap,
             length_function=len,
         )
+
+    def _load_index(self):
+        """
+        Загрузить FAISS индекс (поддержка старого и нового формата)
+
+        Returns:
+            FAISS векторное хранилище или None
+        """
+        # 1. Пробуем загрузить новый формат (faiss.index + chunks_metadata.json)
+        if self.new_index_path.exists() and self.chunks_meta_path.exists():
+            log_call_flow(f"Loading new format index: {self.new_index_path}")
+            try:
+                import json
+                index = faiss.read_index(str(self.new_index_path))
+                
+                # Загружаем метаданные чанков
+                chunks_data = json.loads(self.chunks_meta_path.read_text(encoding="utf-8"))
+                chunks = chunks_data.get("chunks", [])
+                
+                # Создаем векторное хранилище с загруженным индексом
+                from langchain_community.vectorstores import FAISS
+                from langchain_core.documents import Document
+                
+                # Создаем документы и добавляем их в docstore
+                docstore_dict = {}
+                id_mapping = chunks_data.get("id_mapping", {})
+                
+                for idx_str, chunk_id in id_mapping.items():
+                    idx = int(idx_str)
+                    if idx < len(chunks):
+                        chunk = chunks[idx]
+                        doc = Document(
+                            page_content=chunk.get("content", ""),
+                            metadata=chunk.get("metadata", {})
+                        )
+                        docstore_dict[chunk_id] = doc
+                
+                # Создаем docstore с документами
+                docstore = InMemoryDocstore(docstore_dict)
+                
+                # Создаем векторное хранилище
+                vectorstore = FAISS(self.embeddings, index, docstore, {})
+                
+                # Восстанавливаем маппинг index_to_docstore_id
+                for idx_str, chunk_id in id_mapping.items():
+                    idx = int(idx_str)
+                    if idx < index.ntotal:
+                        vectorstore.index_to_docstore_id[idx] = chunk_id
+                
+                doc_count = len(docstore_dict)
+                logger.info(f"✓ Загружен новый формат FAISS индекса: {doc_count} документов")
+                return vectorstore
+                
+            except Exception as e:
+                logger.warning(f"Ошибка загрузки нового формата индекса: {e}")
+                import traceback
+                logger.debug(traceback.format_exc())
+
+        # 2. Пробуем загрузить старый формат (faiss_index/ + index_meta.pkl)
+        if self.index_path.exists() and self.meta_path.exists():
+            log_call_flow(f"Loading old format index: {self.index_path}")
+            try:
+                vectorstore = FAISS.load_local(
+                    str(self.index_path),
+                    self.embeddings,
+                    allow_dangerous_deserialization=True,
+                )
+                doc_count = len(vectorstore.index_to_docstore_id)
+                logger.info(f"✓ Загружен старый формат FAISS индекса: {doc_count} документов")
+                return vectorstore
+            except Exception as e:
+                logger.warning(f"Ошибка загрузки старого формата индекса: {e}")
+
+        # 3. Индекс не найден
+        logger.warning("FAISS индекс не найден. Создайте индекс через build_faiss_index.py")
+        return None
 
     def _ensure_index(self):
         """Создать индекс если не существует"""

@@ -26,8 +26,9 @@ class YandexGPTClient(LLMClient):
     def __init__(
         self,
         model: str = "yandexgpt",
-        temperature: float = 0.7,
-        max_tokens: int = 300,
+        temperature: float = 0.3,
+        max_tokens: int = 500,
+        system_prompt: Optional[str] = None,
     ):
         """
         Инициализация клиента YandexGPT
@@ -36,10 +37,14 @@ class YandexGPTClient(LLMClient):
             model: Название модели (yandexgpt-lite или yandexgpt)
             temperature: Температура генерации (0.0 - 1.0)
             max_tokens: Максимальное количество токенов в ответе
+            system_prompt: Системный промт (по умолчанию используется SYSTEM_PROMPT_AN)
         """
-        self._model = model
-        self.temperature = temperature
-        self.max_tokens = max_tokens
+        super().__init__(
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            system_prompt=system_prompt,
+        )
         self.api_url = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
 
     @property
@@ -62,24 +67,30 @@ class YandexGPTClient(LLMClient):
         return f"gpt://{settings.yandex_folder_id}/{model_name}/latest"
 
     @trace(show_result=False)
-    def ask(self, question: str, context: Optional[str] = None) -> str:
+    def ask(
+        self,
+        question: str,
+        context: Optional[str] = None,
+        sources: Optional[list[str]] = None,
+    ) -> str:
         """
         Отправить запрос к YandexGPT
 
         Args:
             question: Вопрос пользователя
             context: Контекст из RAG (опционально)
+            sources: Источники из RAG для цитирования (опционально)
 
         Returns:
             Текст ответа от модели или сообщение об ошибке
         """
         log_call_flow(f"YandexGPT request: '{question[:50]}...' with context={context is not None}")
-        
+
         if not settings.yandex_folder_id or not settings.yandex_api_key:
             logger.warning("YandexGPT credentials not configured")
             return "⚠️ YandexGPT не настроен. Проверьте переменные окружения YANDEX_FOLDER_ID и YANDEX_API_KEY."
 
-        prompt = self._build_prompt(question, context)
+        prompt = self._build_prompt(question, context, sources)
         log_call_flow(f"Built prompt: '{prompt[:50]}...'")
 
         headers = {

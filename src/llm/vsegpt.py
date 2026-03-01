@@ -13,8 +13,9 @@ class VseGPTClient(LLMClient):
     def __init__(
         self,
         model: str = "gpt-4o-mini",
-        temperature: float = 0.7,
-        max_tokens: int = 300,
+        temperature: float = 0.3,
+        max_tokens: int = 500,
+        system_prompt: Optional[str] = None,
     ):
         """
         Инициализация клиента VseGPT.ru
@@ -23,10 +24,14 @@ class VseGPTClient(LLMClient):
             model: Название модели (например, gpt-4o-mini, gpt-4, и т.д.)
             temperature: Температура генерации (0.0 - 1.0)
             max_tokens: Максимальное количество токенов в ответе
+            system_prompt: Системный промт (по умолчанию используется SYSTEM_PROMPT_AN)
         """
-        self._model = model
-        self.temperature = temperature
-        self.max_tokens = max_tokens
+        super().__init__(
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            system_prompt=system_prompt,
+        )
         self.api_url = "https://api.vsegpt.ru/v1/chat/completions"
 
     @property
@@ -38,13 +43,19 @@ class VseGPTClient(LLMClient):
         return self._model
 
     @trace(show_result=False)
-    def ask(self, question: str, context: Optional[str] = None) -> str:
+    def ask(
+        self,
+        question: str,
+        context: Optional[str] = None,
+        sources: Optional[list[str]] = None,
+    ) -> str:
         """
         Отправить запрос к VseGPT.ru
 
         Args:
             question: Вопрос пользователя
             context: Контекст из RAG (опционально)
+            sources: Источники из RAG для цитирования (опционально)
 
         Returns:
             Текст ответа от модели или сообщение об ошибке
@@ -55,7 +66,7 @@ class VseGPTClient(LLMClient):
             logger.warning("VseGPT API key not configured")
             return "⚠️ VseGPT.ru не настроен. Проверьте переменную окружения VSEGPT_API_KEY."
 
-        prompt = self._build_prompt(question, context)
+        prompt = self._build_prompt(question, context, sources)
         log_call_flow(f"Built prompt: '{prompt[:50]}...'")
 
         headers = {
