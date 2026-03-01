@@ -1,5 +1,5 @@
 import requests
-from typing import Optional
+from typing import Optional, List
 from loguru import logger
 
 from src.core.config import settings
@@ -48,6 +48,7 @@ class VseGPTClient(LLMClient):
         question: str,
         context: Optional[str] = None,
         sources: Optional[list[str]] = None,
+        conversation_history: Optional[List[dict]] = None,
     ) -> str:
         """
         Отправить запрос к VseGPT.ru
@@ -56,17 +57,18 @@ class VseGPTClient(LLMClient):
             question: Вопрос пользователя
             context: Контекст из RAG (опционально)
             sources: Источники из RAG для цитирования (опционально)
+            conversation_history: История диалога для поддержания контекста (опционально)
 
         Returns:
             Текст ответа от модели или сообщение об ошибке
         """
         log_call_flow(f"VseGPT request: '{question[:50]}...' with context={context is not None}")
-        
+
         if not settings.vsegpt_api_key:
             logger.warning("VseGPT API key not configured")
             return "⚠️ VseGPT.ru не настроен. Проверьте переменную окружения VSEGPT_API_KEY."
 
-        prompt = self._build_prompt(question, context, sources)
+        prompt = self._build_prompt(question, context, sources, conversation_history)
         log_call_flow(f"Built prompt: '{prompt[:50]}...'")
 
         headers = {
@@ -74,13 +76,22 @@ class VseGPTClient(LLMClient):
             "Content-Type": "application/json",
         }
 
+        # Формируем сообщения для API
+        messages = [{"role": "system", "content": self.system_prompt}]
+        
+        # Добавляем историю диалога, если есть
+        if conversation_history:
+            for msg in conversation_history:
+                messages.append({"role": msg["role"], "content": msg["content"]})
+        
+        # Добавляем текущий вопрос
+        messages.append({"role": "user", "content": prompt})
+
         payload = {
             "model": self._model,
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
-            "messages": [
-                {"role": "user", "content": prompt}
-            ],
+            "messages": messages,
         }
 
         try:
