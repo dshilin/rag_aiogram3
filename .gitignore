@@ -3,6 +3,9 @@
 .venv/
 venv/
 
+#Agents
+.gigacode
+
 # Python
 __pycache__/
 *.py[cod]

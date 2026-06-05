@@ -83,8 +83,69 @@ python -m src.rag.chunk_loader \
 
 ## Запуск бота
 
+### Локальный запуск
+
 ```bash
 python main.py
+```
+
+### Запуск через Docker
+
+#### Сборка и запуск с помощью docker-compose (рекомендуется)
+
+1. Скопируйте `.env.example` в `.env` и заполните необходимыми значениями:
+```bash
+cp .env.example .env
+```
+
+2. Соберите и запустите контейнер:
+```bash
+docker-compose up --build
+```
+
+3. Запуск в фоновом режиме:
+```bash
+docker-compose up -d
+```
+
+4. Остановка контейнера:
+```bash
+docker-compose down
+```
+
+5. Просмотр логов:
+```bash
+docker-compose logs -f
+```
+
+6. Пересборка без кэша:
+```bash
+docker-compose build --no-cache
+docker-compose up -d
+```
+
+#### Сборка и запуск через docker build
+
+1. Соберите образ:
+```bash
+docker build -t rag-telegram-bot .
+```
+
+2. Запустите контейнер:
+```bash
+docker run --env-file .env \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/logs:/app/logs \
+  rag-telegram-bot
+```
+
+3. Запуск в фоновом режиме:
+```bash
+docker run -d --env-file .env \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/logs:/app/logs \
+  --name rag-bot \
+  rag-telegram-bot
 ```
 
 ## Команды бота
@@ -164,3 +225,11 @@ python examples/rag_chunking_example.py
 | `CHUNK_OVERLAP` | Перекрытие чанков | 50 |
 | `TOP_K` | Количество результатов поиска | 3 |
 | `EMBEDDING_MODEL` | Модель эмбеддингов | all-MiniLM-L6-v2 |
+
+## Dockerособенности
+
+- Образ использует Python 3.11-slim-bookworm для минимального размера
+- Приложение работает от имени непривилегированного пользователя `appuser`
+- Данные и логи хранятся в монтируемых томах (`/app/data`, `/app/logs`)
+- Образ оптимизирован для production: отключен байт-код, включен unbuffered вывод
+- Healthcheck проверяет существование директории embeddings
