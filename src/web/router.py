@@ -11,7 +11,13 @@ from src.bot.classifier import classify_query, QueryCategory
 
 router = APIRouter()
 
-rag_service = RAGService()
+_rag_service: Optional[RAGService] = None
+
+def get_rag_service() -> RAGService:
+    global _rag_service
+    if _rag_service is None:
+        _rag_service = RAGService()
+    return _rag_service
 
 llm_client = None
 USE_LLM = False
@@ -73,12 +79,13 @@ async def chat(req: ChatRequest):
 
     session_history = session_manager.get_history(user_id, limit=10)
 
+    sources = []
+
     if USE_LLM and llm_client:
-        results = rag_service.query_with_metadata(query, top_k=5, score_threshold=0.3)
+        results = get_rag_service().query_with_metadata(query, top_k=5, score_threshold=0.3)
 
         if results:
             context_parts = []
-            sources = []
             for chunk in results:
                 context_parts.append(
                     f"[Источник: {chunk.source}, стр. {chunk.page}]\n{chunk.content}"
@@ -113,7 +120,7 @@ async def chat(req: ChatRequest):
                 "• Книге «Это работает – как и почему»"
             )
     else:
-        result = rag_service.query(query)
+        result = get_rag_service().query(query)
         if result:
             response = f"💡 Ответ:\n\n{result}"
         else:
