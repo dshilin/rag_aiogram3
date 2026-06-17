@@ -1,6 +1,6 @@
 import pytest
 from httpx import AsyncClient, ASGITransport
-from unittest.mock import patch, Mock
+from unittest.mock import patch
 from src.web.router import router
 from src.bot.classifier import QueryCategory
 from fastapi import FastAPI
@@ -25,5 +25,52 @@ async def test_chat_greeting(client):
         })
         assert response.status_code == 200
         data = response.json()
-        assert "reply" in data
         assert data["category"] == "greeting"
+        assert "RAG-бот" in data["reply"]
+
+
+@pytest.mark.asyncio
+async def test_chat_help_request(client):
+    with patch("src.web.router.classify_query", return_value=QueryCategory.HELP_REQUEST):
+        response = await client.post("/api/chat", json={
+            "message": "Помогите",
+            "session_id": "test-session-2"
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["category"] == "help_request"
+        assert "Анонимные Наркоманы" in data["reply"]
+
+
+@pytest.mark.asyncio
+async def test_chat_off_topic(client):
+    with patch("src.web.router.classify_query", return_value=QueryCategory.OFF_TOPIC):
+        response = await client.post("/api/chat", json={
+            "message": "Погода",
+            "session_id": "test-session-3"
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["category"] == "off_topic"
+
+
+@pytest.mark.asyncio
+async def test_chat_greeting_exact_reply(client):
+    with patch("src.web.router.classify_query", return_value=QueryCategory.GREETING):
+        response = await client.post("/api/chat", json={
+            "message": "Привет",
+            "session_id": "test-session-4"
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["category"] == "greeting"
+        assert "RAG-бот" in data["reply"]
+
+
+@pytest.mark.asyncio
+async def test_chat_missing_message(client):
+    """422 validation error for missing message"""
+    response = await client.post("/api/chat", json={
+        "session_id": "test-session-5"
+    })
+    assert response.status_code == 422
