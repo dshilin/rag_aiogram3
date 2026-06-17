@@ -74,3 +74,22 @@ async def test_chat_missing_message(client):
         "session_id": "test-session-5"
     })
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_new_session(client):
+    """POST /api/session/new resets session"""
+    response = await client.post("/api/session/new", json={
+        "session_id": "test-session-new"
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_get_index(client):
+    """GET / returns HTML page"""
+    response = await client.get("/")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]

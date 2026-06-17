@@ -1,6 +1,8 @@
 import uuid
+from pathlib import Path
 from typing import Optional
 from fastapi import APIRouter
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from loguru import logger
 
@@ -44,6 +46,27 @@ class ChatResponse(BaseModel):
     reply: str
     category: str
     sources: Optional[list[dict]] = None
+
+
+class NewSessionRequest(BaseModel):
+    session_id: str
+
+
+class NewSessionResponse(BaseModel):
+    success: bool
+
+
+@router.post("/api/session/new", response_model=NewSessionResponse)
+async def new_session(req: NewSessionRequest):
+    user_id = abs(hash(req.session_id))
+    session_manager.start_new_session(user_id)
+    return NewSessionResponse(success=True)
+
+
+@router.get("/")
+async def index():
+    html = (Path(__file__).parent / "templates" / "chat.html").read_text(encoding="utf-8")
+    return HTMLResponse(html)
 
 
 @router.post("/api/chat", response_model=ChatResponse)
