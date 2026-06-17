@@ -58,9 +58,13 @@ class NewSessionResponse(BaseModel):
 
 @router.post("/api/session/new", response_model=NewSessionResponse)
 async def new_session(req: NewSessionRequest):
-    user_id = abs(hash(req.session_id))
-    session_manager.start_new_session(user_id)
-    return NewSessionResponse(success=True)
+    try:
+        user_id = abs(hash(req.session_id))
+        session_manager.start_new_session(user_id)
+        return NewSessionResponse(success=True)
+    except Exception as e:
+        logger.error(f"Error starting new session: {e}")
+        return NewSessionResponse(success=False)
 
 
 @router.get("/")
