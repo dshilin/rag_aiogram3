@@ -1,19 +1,25 @@
-from typing import Optional, Dict, Type
+from typing import Optional, Type
 
 from src.llm.base import LLMClient
-from src.llm.yandex_gpt import YandexGPTClient
-from src.llm.vsegpt import VseGPTClient
-from src.llm.openai_client import OpenAIClient
 
 
 class LLMFactory:
     """Фабрика для создания LLM клиентов"""
 
-    _providers: Dict[str, Type[LLMClient]] = {
-        "yandex": YandexGPTClient,
-        "vsegpt": VseGPTClient,
-        "openai": OpenAIClient,
-    }
+    _providers = None
+
+    @classmethod
+    def _get_providers(cls):
+        if cls._providers is None:
+            from src.llm.yandex_gpt import YandexGPTClient
+            from src.llm.vsegpt import VseGPTClient
+            from src.llm.openai_client import OpenAIClient
+            cls._providers = {
+                "yandex": YandexGPTClient,
+                "vsegpt": VseGPTClient,
+                "openai": OpenAIClient,
+            }
+        return cls._providers
 
     @classmethod
     def register_provider(cls, name: str, client_class: Type[LLMClient]):
@@ -24,7 +30,7 @@ class LLMFactory:
             name: Название провайдера
             client_class: Класс клиента
         """
-        cls._providers[name] = client_class
+        cls._get_providers()[name] = client_class
 
     @classmethod
     def get_client(
@@ -51,13 +57,14 @@ class LLMFactory:
         Raises:
             ValueError: Если провайдер не найден
         """
-        if provider not in cls._providers:
-            available = ", ".join(cls._providers.keys())
+        providers = cls._get_providers()
+        if provider not in providers:
+            available = ", ".join(providers.keys())
             raise ValueError(
                 f"Неизвестный провайдер: {provider}. Доступные: {available}"
             )
 
-        client_class = cls._providers[provider]
+        client_class = providers[provider]
 
         # Создаем клиент с параметрами
         kwargs = {
@@ -74,7 +81,7 @@ class LLMFactory:
     @classmethod
     def list_providers(cls) -> list[str]:
         """Вернуть список зарегистрированных провайдеров"""
-        return list(cls._providers.keys())
+        return list(cls._get_providers().keys())
 
 
 # Глобальная функция для получения LLM клиента

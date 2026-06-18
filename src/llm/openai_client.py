@@ -62,6 +62,7 @@ class OpenAIClient(LLMClient):
         question: str,
         context: Optional[str] = None,
         sources: Optional[List[str]] = None,
+        conversation_history: Optional[List[dict]] = None,
     ) -> str:
         """
         Отправить запрос к OpenAI
@@ -70,6 +71,7 @@ class OpenAIClient(LLMClient):
             question: Вопрос пользователя
             context: Контекст из RAG (опционально)
             sources: Источники из RAG для цитирования (опционально)
+            conversation_history: История диалога для поддержания контекста (опционально)
 
         Returns:
             Текст ответа от модели или сообщение об ошибке
@@ -77,7 +79,7 @@ class OpenAIClient(LLMClient):
         log_call_flow(f"OpenAI request: '{question[:50]}...' with context={context is not None}")
 
         # Формируем промпт с контекстом
-        user_prompt = self._build_prompt(question, context, sources)
+        user_prompt = self._build_prompt(question, context, sources, conversation_history)
         log_call_flow(f"Built prompt: '{user_prompt[:50]}...'")
 
         try:
@@ -87,12 +89,20 @@ class OpenAIClient(LLMClient):
                 f"temperature={self.temperature}, max_tokens={self.max_tokens}"
             )
 
+            # Формируем сообщения для API
+            messages = [{"role": "system", "content": self.system_prompt}]
+            
+            # Добавляем историю диалога, если есть
+            if conversation_history:
+                for msg in conversation_history:
+                    messages.append({"role": msg["role"], "content": msg["content"]})
+            
+            # Добавляем текущий вопрос
+            messages.append({"role": "user", "content": user_prompt})
+
             response = self.client.chat.completions.create(
                 model=self._model,
-                messages=[
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
+                messages=messages,
                 max_tokens=self.max_tokens,
                 temperature=self.temperature,
             )

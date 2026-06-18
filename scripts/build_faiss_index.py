@@ -8,10 +8,11 @@
     python scripts/build_faiss_index.py [--chunks-dir CHUNKS_DIR] [--output-dir OUTPUT_DIR]
 
 Аргументы:
-    --chunks-dir      Директория с чанками (по умолчанию: data/documents/chunks_paragraphs)
+    --chunks-dir      Директория с чанками (по умолчанию: data/documents/chunks)
     --output-dir      Директория для сохранения индекса (по умолчанию: data/embeddings)
-    --model-name      Модель для эмбеддингов (по умолчанию: sentence-transformers/rubert-base-cased)
+    --model-name      Модель для эмбеддингов (по умолчанию: из .env EMBEDDING_MODEL)
     --batch-size      Размер батча для генерации эмбеддингов (по умолчанию: 32)
+    --doc-filter      Фильтр по имени документа (подстрока, регистронезависимая)
 """
 
 import argparse
@@ -60,12 +61,13 @@ def setup_logging():
     )
 
 
-def load_chunks(chunks_dir: Path) -> list[dict]:
+def load_chunks(chunks_dir: Path, doc_filter: Optional[str] = None) -> list[dict]:
     """
     Загрузить все чанки из директории
     
     Args:
         chunks_dir: Директория с чанками
+        doc_filter: Фильтр по имени документа (подстрока, регистронезависимая)
         
     Returns:
         Список чанков с метаданными
@@ -77,7 +79,10 @@ def load_chunks(chunks_dir: Path) -> list[dict]:
         return all_chunks
     
     # Ищем все директории с чанками
-    doc_dirs = [d for d in chunks_dir.iterdir() if d.is_dir()]
+    doc_dirs = [d for d in chunks_dir.iterdir() if d.is_dir() and not d.name.startswith(".")]
+    
+    if doc_filter:
+        doc_dirs = [d for d in doc_dirs if doc_filter.lower() in d.name.lower()]
     
     if not doc_dirs:
         logger.warning(f"Директории с чанками не найдены в {chunks_dir}")
@@ -100,14 +105,18 @@ def load_chunks(chunks_dir: Path) -> list[dict]:
             logger.error(f"  ✗ {doc_dir.name}: ошибка чтения index.json: {e}")
             continue
         
+        # Определяем формат — поддерживаем "chunks" (md_chunker) и "paragraphs" (chunk_by_paragraphs)
+        chunk_entries = doc_index.get("chunks") or doc_index.get("paragraphs") or []
+        
         # Загружаем каждый чанк
         chunk_count = 0
-        for chunk_info in doc_index.get("paragraphs", []):
+        for chunk_info in chunk_entries:
             chunk_id = chunk_info.get("chunk_id")
-            if not chunk_id:
-                continue
             
-            chunk_file = doc_dir / f"{chunk_id}.json"
+            # md_chunker сохраняет имя файла, chunk_by_paragraphs — chunk_id
+            chunk_file = doc_dir / chunk_info.get("file", f"{chunk_id}.json")
+            if not chunk_file.exists():
+                chunk_file = doc_dir / f"{chunk_id}.json"
             if not chunk_file.exists():
                 continue
             
@@ -121,7 +130,7 @@ def load_chunks(chunks_dir: Path) -> list[dict]:
         
         logger.success(f"  ✓ {doc_dir.name}: {chunk_count} чанков")
     
-    logger.info(f"Всего загружено чанков: {all_chunks}")
+    logger.info(f"Всего загружено чанков: {len(all_chunks)}")
     return all_chunks
 
 
@@ -252,6 +261,7 @@ def build_index(
     batch_size: int = 32,
     use_ivf: bool = False,
     nlist: int = 100,
+    doc_filter: Optional[str] = None,
 ) -> Optional[IndexMetadata]:
     """
     Построить FAISS индекс из чанков
@@ -263,12 +273,13 @@ def build_index(
         batch_size: Размер батча
         use_ivf: Использовать IVF индекс
         nlist: Количество кластеров для IVF
+        doc_filter: Фильтр по имени документа
         
     Returns:
         Метаданные индекса или None при ошибке
     """
     # Загружаем чанки
-    chunks = load_chunks(chunks_dir)
+    chunks = load_chunks(chunks_dir, doc_filter)
     
     if not chunks:
         logger.error("Нет чанков для индексации")
@@ -413,8 +424,8 @@ def main():
     parser.add_argument(
         "--chunks-dir",
         type=Path,
-        default=Path("data/documents/chunks_paragraphs"),
-        help="Директория с чанками (по умолчанию: data/documents/chunks_paragraphs)",
+        default=Path("data/documents/chunks"),
+        help="Директория с чанками (по умолчанию: data/documents/chunks)",
     )
     parser.add_argument(
         "--output-dir",
@@ -425,8 +436,8 @@ def main():
     parser.add_argument(
         "--model-name",
         type=str,
-        default="sentence-transformers/rubert-base-cased",
-        help="Модель для эмбеддингов (по умолчанию: sentence-transformers/rubert-base-cased)",
+        default=os.getenv("EMBEDDING_MODEL", "sentence-transformers/rubert-base-cased"),
+        help="Модель для эмбеддингов (по умолчанию: из .env EMBEDDING_MODEL)",
     )
     parser.add_argument(
         "--batch-size",
@@ -444,6 +455,12 @@ def main():
         type=int,
         default=100,
         help="Количество кластеров для IVF (по умолчанию: 100)",
+    )
+    parser.add_argument(
+        "--doc-filter",
+        type=str,
+        default=None,
+        help="Фильтр по имени документа (подстрока, регистронезависимая)",
     )
     parser.add_argument(
         "--search",
@@ -476,6 +493,7 @@ def main():
     logger.info(f"Модель: {args.model_name}")
     logger.info(f"Размер батча: {args.batch_size}")
     logger.info(f"IVF: {args.use_ivf}")
+    logger.info(f"Фильтр: {args.doc_filter or 'все документы'}")
     logger.info("=" * 60)
     
     if args.search:
@@ -503,6 +521,7 @@ def main():
             args.batch_size,
             args.use_ivf,
             args.nlist,
+            doc_filter=args.doc_filter,
         )
         
         return 0 if metadata else 1
