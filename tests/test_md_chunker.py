@@ -149,5 +149,43 @@ class TestMergeShortParagraphs:
         assert len(chunks) == 2
 
 
+class TestSaveChunks:
+    def test_save_chunks_with_metadata(self, tmp_path):
+        md_file = tmp_path / "test.md"
+        md_file.write_text(
+            "<!-- Page 1 -->\n"
+            "This is the first paragraph.\n"
+            "\n"
+            "<!-- Page 2 -->\n"
+            "This paragraph continues\n"
+            "<!-- Page 3 -->\n"
+            "to page 3 here.\n"
+            "\n"
+            "Short.",
+            encoding="utf-8",
+        )
+        out_dir = tmp_path / "chunks"
+        chunker = MarkdownChunker(
+            cross_page_merge=True,
+            merge_short_paragraphs=True,
+            merge_threshold=50,
+        )
+        chunks, stats = chunker.chunk_md(md_file)
+        chunker.save_chunks(chunks, out_dir)
+
+        assert (out_dir / "index.json").exists()
+        assert (out_dir / "chunk_0000.json").exists()
+
+        import json
+        idx = json.loads((out_dir / "index.json").read_text(encoding="utf-8"))
+        assert idx["total_chunks"] == len(chunks)
+        assert idx["source"] == "test"
+
+        chunk0 = json.loads((out_dir / "chunk_0000.json").read_text(encoding="utf-8"))
+        assert chunk0["metadata"]["source"] == "test"
+        assert chunk0["metadata"]["page"] == 1
+        assert stats.cross_page_paragraphs == 1
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
