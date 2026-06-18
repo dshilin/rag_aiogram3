@@ -61,20 +61,20 @@ shift || true
 case "$COMMAND" in
     chunk)
         print_header "Разбиение документов на чанки"
-        python -m src.rag.chunker "$@"
+        python -m src.rag.md_chunker "$@"
         ;;
-    
+
     search)
         print_header "Поиск по векторной базе"
         python -m src.rag.search "$@"
         ;;
-    
+
     full)
         print_header "Полный цикл RAG"
         
         # Step 1: Chunking
         echo -e "${GREEN}[1/3] Разбиение документов на чанки...${NC}"
-        python -m src.rag.chunker "$@"
+        python -m src.rag.md_chunker "$@"
         
         # Step 2: Indexing
         echo ""

@@ -264,7 +264,7 @@ def main():
         
         if doc_count == 0:
             logger.error("Векторная база пуста! Сначала добавьте документы.")
-            logger.info("Используйте: python -m src.rag.chunker --input-dir data/documents")
+            logger.info("Используйте: python -m src.rag.md_chunker --input-dir data/documents")
             return 1
             
     except Exception as e:
