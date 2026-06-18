@@ -80,149 +80,74 @@ class MarkdownChunker:
     def __init__(
         self,
         min_paragraph_length: int = 10,
+        cross_page_merge: bool = True,
+        merge_short_paragraphs: bool = True,
+        merge_threshold: int = 50,
     ):
-        """
-        Args:
-            min_paragraph_length: Минимальная длина абзаца
-        """
         self.min_paragraph_length = min_paragraph_length
+        self.cross_page_merge = cross_page_merge
+        self.merge_short_paragraphs = merge_short_paragraphs
+        self.merge_threshold = merge_threshold
 
     def extract_pages_from_md(self, md_path: Path) -> list[tuple[int, str]]:
-        """
-        Извлечь текст из Markdown с разбивкой по страницам
-
-        Args:
-            md_path: Путь к MD файлу
-
-        Returns:
-            Список кортежей (номер_страницы, текст_страницы)
-        """
         content = md_path.read_text(encoding="utf-8")
-        
-        # Паттерн для поиска маркеров страниц
         page_pattern = r'<!--\s*Page\s+(\d+)\s*-->'
-        
-        # Разделяем контент по маркерам страниц
         parts = re.split(page_pattern, content)
-        
-        pages = []
-        current_page = 1
-        
-        # parts[0] - контент до первого маркера (если есть)
-        # parts[1] - номер страницы, parts[2] - контент страницы, и т.д.
-        i = 0
-        while i < len(parts):
-            if i == 0 and parts[0].strip():
-                # Контент до первого маркера - считаем как страницу 1
-                if parts[0].strip():
-                    pages.append((1, parts[0]))
-                    current_page = 1
-                i += 1
-            elif i < len(parts) - 1:
-                # Номер страницы и контент
-                try:
-                    current_page = int(parts[i])
-                except ValueError:
-                    current_page += 1
-                
-                page_content = parts[i + 1] if i + 1 < len(parts) else ""
-                pages.append((current_page, page_content))
-                i += 2
-            else:
-                i += 1
 
-        # Если маркеров страниц не было вообще
-        if not pages and content.strip():
-            pages.append((1, content))
+        pages = []
+
+        if not re.search(page_pattern, content):
+            if content.strip():
+                pages.append((1, content))
+            return pages
+
+        i = 0
+        if parts[0].strip():
+            pages.append((1, parts[0]))
+            i = 1
+        else:
+            i = 1
+
+        while i < len(parts) - 1:
+            page_num = int(parts[i])
+            page_content = parts[i + 1]
+            pages.append((page_num, page_content))
+            i += 2
 
         return pages
 
     def split_into_paragraphs(self, text: str) -> list[str]:
-        """
-        Разбить текст на абзацы/предложения
-
-        Разбиваем по:
-        1. Двойным новым строкам (абзацы)
-        2. Предложениям (для сплошного текста)
-        """
         if not text.strip():
             return []
 
-        # Удаляем маркеры страниц из текста
         text = re.sub(r'<!--\s*Page\s+\d+\s*-->', '', text)
-        
         paragraphs = []
-        
-        # Сначала разделим по двойным новым строкам
         raw_blocks = re.split(r'\n\n+', text)
-        
+
         for block in raw_blocks:
-            # Очищаем блок
             lines = []
             for line in block.split('\n'):
                 line = line.strip()
-                if line:
-                    # Пропускаем маркеры и служебные строки
-                    if line.startswith('<!--') and line.endswith('-->'):
-                        continue
-                    if re.match(r'^\*\[\d+\s+изображений?\s+на\s+странице\s+\d+\]\*$', line):
-                        continue
-                    if re.match(r'^.*\.{3,}\d+$', line):
-                        continue
-                    lines.append(line)
-            
+                if not line:
+                    continue
+                if line.startswith('<!--') and line.endswith('-->'):
+                    continue
+                if re.match(r'^\*\[\d+\s+изображений?\s+на\s+странице\s+\d+\]\*$', line):
+                    continue
+                if re.match(r'^.*\.{3,}\d+$', line):
+                    continue
+                lines.append(line)
+
             if not lines:
                 continue
-            
-            # Объединяем строки в блок
+
             block_text = ' '.join(lines)
-            
-            # Если блок длинный, разбиваем на предложения
-            if len(block_text) > 300:
-                # Разбиваем по предложениям (. ! ?)
-                sentences = re.split(r'(?<=[.!?])\s+', block_text)
-                
-                current_para = []
-                current_length = 0
-                
-                for sentence in sentences:
-                    sentence = sentence.strip()
-                    if not sentence:
-                        continue
-                    
-                    current_para.append(sentence)
-                    current_length += len(sentence)
-                    
-                    # Если набрали достаточно символов - сохраняем абзац
-                    if current_length >= 100:
-                        paragraph = ' '.join(current_para)
-                        if len(paragraph) >= self.min_paragraph_length:
-                            paragraphs.append(paragraph)
-                        current_para = []
-                        current_length = 0
-                
-                # Добавляем остаток
-                if current_para:
-                    paragraph = ' '.join(current_para)
-                    if len(paragraph) >= self.min_paragraph_length:
-                        paragraphs.append(paragraph)
-            else:
-                # Короткий блок - сохраняем как есть
-                if len(block_text) >= self.min_paragraph_length:
-                    paragraphs.append(block_text)
+            if len(block_text) >= self.min_paragraph_length:
+                paragraphs.append(block_text)
 
         return paragraphs
 
     def chunk_md(self, md_path: Path) -> tuple[list[Chunk], ChunkingStats]:
-        """
-        Разбить MD файл на чанки по абзацам
-
-        Args:
-            md_path: Путь к MD файлу
-
-        Returns:
-            Кортеж (список чанков, статистика)
-        """
         stats = ChunkingStats()
         chunks = []
         source_name = md_path.stem
@@ -233,6 +158,8 @@ class MarkdownChunker:
         try:
             pages_text = self.extract_pages_from_md(md_path)
             stats.total_pages = len(pages_text)
+
+            continued_paragraph: tuple[int, str] | None = None
 
             for page_num, page_text in pages_text:
                 if not page_text.strip():
@@ -245,16 +172,54 @@ class MarkdownChunker:
                     stats.empty_pages += 1
                     continue
 
+                if self.cross_page_merge and continued_paragraph is not None:
+                    prev_page, prev_text = continued_paragraph
+                    paragraphs[0] = prev_text + " " + paragraphs[0]
+                    stats.cross_page_paragraphs += 1
+                    continued_paragraph = None
+                    chunk_page = prev_page
+                else:
+                    chunk_page = page_num
+
+                if self.cross_page_merge and not any(paragraphs[-1].rstrip().endswith(c) for c in ('.', '!', '?', ':', ';', '»', '"')):
+                    continued_paragraph = (chunk_page, paragraphs.pop())
+
                 for para in paragraphs:
                     chunk = Chunk(
                         content=para,
                         source=source_name,
-                        page=page_num,
+                        page=chunk_page,
                         paragraph_index=global_paragraph_index,
                     )
                     chunks.append(chunk)
                     global_paragraph_index += 1
                     stats.total_paragraphs += 1
+
+            if self.cross_page_merge and continued_paragraph is not None:
+                prev_page, prev_text = continued_paragraph
+                chunk = Chunk(
+                    content=prev_text,
+                    source=source_name,
+                    page=prev_page,
+                    paragraph_index=global_paragraph_index,
+                )
+                chunks.append(chunk)
+                global_paragraph_index += 1
+                stats.total_paragraphs += 1
+
+            if self.merge_short_paragraphs:
+                merged = []
+                for chunk in chunks:
+                    if merged and len(chunk.content) < self.merge_threshold:
+                        merged[-1] = Chunk(
+                            content=merged[-1].content + " " + chunk.content,
+                            source=merged[-1].source,
+                            page=merged[-1].page,
+                            paragraph_index=merged[-1].paragraph_index,
+                        )
+                    else:
+                        merged.append(chunk)
+                chunks = merged
 
             stats.total_chunks = len(chunks)
             stats.files_processed += 1
