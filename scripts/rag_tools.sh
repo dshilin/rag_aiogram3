@@ -47,7 +47,7 @@ print_usage() {
     echo "    --clear            Очистить векторную базу перед индексацией"
     echo ""
     echo "Примеры:"
-    echo "  $0 chunk                                    # Разбить все PDF в data/documents"
+    echo "  $0 chunk                                    # Разбить все MD в data/documents/md_docs"
     echo "  $0 search --query \"Что такое RAG?\"         # Найти информацию о RAG"
     echo "  $0 search --interactive                     # Интерактивный поиск"
     echo "  $0 full --query \"Архитектура системы\"       # Полный цикл с поиском"
@@ -61,35 +61,34 @@ shift || true
 case "$COMMAND" in
     chunk)
         print_header "Разбиение документов на чанки"
-        python -m src.rag.chunker "$@"
+        python -m src.rag.md_chunker "$@"
         ;;
-    
+
     search)
         print_header "Поиск по векторной базе"
         python -m src.rag.search "$@"
         ;;
-    
+
     full)
         print_header "Полный цикл RAG"
         
+        # Step 0: Clean markdown
+        echo -e "${GREEN}[1/4] Очистка Markdown от мусора...${NC}"
+        python scripts/clean_markdown.py --input-dir data/documents/md_docs
+        
         # Step 1: Chunking
-        echo -e "${GREEN}[1/3] Разбиение документов на чанки...${NC}"
-        python -m src.rag.chunker "$@"
+        echo -e "${GREEN}[2/4] Разбиение документов на чанки...${NC}"
+        python -m src.rag.md_chunker "$@"
         
-        # Step 2: Indexing
+        # Step 3: Indexing
         echo ""
-        echo -e "${GREEN}[2/3] Индексация чанков в векторной базе...${NC}"
+        echo -e "${GREEN}[3/4] Индексация чанков в векторной базе...${NC}"
         python -m src.rag.chunk_loader --clear
-        if [[ "$*" == *"--clear"* ]]; then
-            # Already passed to chunker, remove for chunk_loader
-            python -m src.rag.chunk_loader
-        else
-            python -m src.rag.chunk_loader
-        fi
+        python -m src.rag.chunk_loader
         
-        # Step 3: Search
+        # Step 4: Search
         echo ""
-        echo -e "${GREEN}[3/3] Поиск...${NC}"
+        echo -e "${GREEN}[4/4] Поиск...${NC}"
         # Extract query from arguments
         QUERY=""
         if [[ "$*" == *"--query"* ]]; then

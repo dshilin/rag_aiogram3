@@ -82,7 +82,7 @@ class RAGService:
         chunks_meta_path = Path(settings.embeddings_db_path) / "chunks_metadata.json"
 
         if not index_path.exists() or not chunks_meta_path.exists():
-            logger.warning("FAISS индекс не найден. Создайте через build_faiss_index.py")
+            logger.warning("FAISS индекс не найден. Создайте через chunk_loader")
             return None
 
         log_call_flow(f"Loading index: {index_path}")
