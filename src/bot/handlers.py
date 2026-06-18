@@ -18,7 +18,14 @@ from src.bot.classifier import classify_query, QueryCategory
 from loguru import logger
 
 router = Router()
-rag_service = RAGService()
+_rag_service: "RAGService | None" = None
+
+
+def get_rag_service() -> RAGService:
+    global _rag_service
+    if _rag_service is None:
+        _rag_service = RAGService()
+    return _rag_service
 
 # Клавиатура с кнопками сессии
 session_keyboard = ReplyKeyboardMarkup(
@@ -138,7 +145,7 @@ async def cmd_help(message: Message):
 async def cmd_status(message: Message):
     """Обработка команды /status"""
     log_call_flow(f"Command /status from user {message.from_user.id}")
-    count = rag_service.get_document_count()
+    count = get_rag_service().get_document_count()
     await message.answer(
         f"📊 В базе знаний: {count} документов\n"
         f"🤖 LLM провайдер: {settings.llm_provider}"
@@ -198,7 +205,7 @@ async def handle_text(message: Message):
     try:
         if USE_LLM and llm_client:
             # Поиск релевантных чанков в RAG
-            results = rag_service.query_with_metadata(query, top_k=5, score_threshold=0.3)
+            results = get_rag_service().query_with_metadata(query, top_k=5, score_threshold=0.3)
 
             if results:
                 # Формируем контекст из найденных чанков
@@ -238,7 +245,7 @@ async def handle_text(message: Message):
                 )
         else:
             # Режим без LLM (только RAG поиск)
-            result = rag_service.query(query)
+            result = get_rag_service().query(query)
 
             if result:
                 response = f"💡 Ответ:\n\n{result}"
@@ -275,7 +282,7 @@ async def handle_document(message: Message):
         text = content.decode("utf-8")
 
         log_call_flow(f"Document loaded, size: {len(text)} chars")
-        rag_service.add_documents([text])
+        get_rag_service().add_documents([text])
 
         log_call_flow(f"Document added to RAG by user {message.from_user.id}")
         await message.answer("✅ Документ успешно добавлен в базу знаний!")

@@ -24,20 +24,28 @@ async def main():
     set_request_id(generate_request_id())
     setup_logging()
 
-    # Telegram bot
-    dp.include_router(router)
-    logger.info("Бот запускается...")
-    await bot.delete_webhook(drop_pending_updates=True)
-
     # FastAPI web server
     config = uvicorn.Config(app, host="0.0.0.0", port=8080, log_level="info")
     server = uvicorn.Server(config)
 
-    # Run both
-    await asyncio.gather(
-        dp.start_polling(bot),
-        server.serve(),
-    )
+    # Telegram bot
+    dp.include_router(router)
+    logger.info("Бот запускается...")
+    try:
+        await asyncio.wait_for(
+            bot.delete_webhook(drop_pending_updates=True),
+            timeout=10,
+        )
+        await asyncio.gather(
+            dp.start_polling(bot),
+            server.serve(),
+        )
+    except asyncio.TimeoutError:
+        logger.warning("Telegram API недоступен, запущен только веб-сервер на порту 8080")
+        await server.serve()
+    except Exception as e:
+        logger.warning(f"Ошибка подключения к Telegram: {e}. Запущен только веб-сервер.")
+        await server.serve()
 
 
 if __name__ == "__main__":

@@ -6,7 +6,6 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from loguru import logger
 
-from src.rag.service import RAGService
 from src.llm import get_llm_client
 from src.core.config import settings
 from src.bot.session import session_manager
@@ -14,11 +13,12 @@ from src.bot.classifier import classify_query, QueryCategory
 
 router = APIRouter()
 
-_rag_service: Optional[RAGService] = None
+_rag_service = None
 
-def get_rag_service() -> RAGService:
+def get_rag_service():
     global _rag_service
     if _rag_service is None:
+        from src.rag.service import RAGService
         _rag_service = RAGService()
     return _rag_service
 

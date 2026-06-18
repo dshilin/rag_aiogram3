@@ -60,10 +60,14 @@ class YandexGPTClient(LLMClient):
 
         Поле имеет вид ``gpt://<folder_id>/<model>/latest``.
         """
-        # Используем модель по умолчанию, если не указана
         model_name = self._model if self._model else "yandexgpt"
 
-        # Строим URI: gpt://folder_id/model_name/latest
+        if model_name.startswith("gpt://"):
+            return model_name
+
+        if not settings.yandex_folder_id:
+            raise ValueError("YANDEX_FOLDER_ID не настроен")
+
         return f"gpt://{settings.yandex_folder_id}/{model_name}/latest"
 
     @trace(show_result=False)
