@@ -93,6 +93,17 @@ def clean_line(line: str) -> str | None:
     return stripped
 
 
+ARTIFACT_PATTERNS = [
+    r'^# Конвертированный документ',
+    r'^\*\*Источник:\*\*\s*.+\.pdf',
+    r'^\*\*Создано в:\*\*',
+    r'^## Страница \d+',
+    r'^\*\[Страница пуста или содержит только изображения\]\*',
+    r'(?i)^\s*(copyright|©|all rights reserved)',
+    r'\bISBN\s+[\d-]{10,}\b',
+]
+
+
 def clean_markdown_content(content: str) -> str:
     """
     Очистить Markdown контент от мусора
@@ -103,6 +114,28 @@ def clean_markdown_content(content: str) -> str:
     Returns:
         Очищенный текст
     """
+    # Remove artifact lines and colophon
+    lines = content.split('\n')
+    filtered = []
+    in_colophon = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped in ('***', '---') and in_colophon:
+            break
+        if stripped in ('***', '---'):
+            in_colophon = True
+            continue
+        if in_colophon:
+            continue
+        skip = False
+        for pattern in ARTIFACT_PATTERNS:
+            if re.match(pattern, stripped):
+                skip = True
+                break
+        if not skip:
+            filtered.append(line)
+    content = '\n'.join(filtered)
+
     lines = content.split('\n')
     cleaned_lines = []
     prev_line = None
