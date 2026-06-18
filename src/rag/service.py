@@ -201,17 +201,6 @@ class RAGService:
         top_k: Optional[int] = None,
         score_threshold: float = 0.0,
     ) -> list[ChunkResult]:
-        """
-        Выполнить поиск с возвратом метаданных
-
-        Args:
-            question: Запрос для поиска
-            top_k: Количество результатов
-            score_threshold: Порог схожести
-
-        Returns:
-            Список ChunkResult с метаданными
-        """
         log_call_flow(f"RAG query: '{question[:50]}...' top_k={top_k or settings.top_k}")
         
         if self.vectorstore is None:
@@ -233,8 +222,19 @@ class RAGService:
             if score >= score_threshold
         ]
 
-        log_call_flow(f"RAG query returned {len(chunk_results)} results")
-        return sorted(chunk_results, key=lambda x: x.score, reverse=True)
+        chunk_results.sort(key=lambda x: x.score, reverse=True)
+
+        # ponytail: dedup by (source, page), keep highest score
+        seen = set()
+        deduped = []
+        for r in chunk_results:
+            key = (r.source, r.page)
+            if key not in seen:
+                seen.add(key)
+                deduped.append(r)
+
+        log_call_flow(f"RAG query returned {len(deduped)} results (deduped from {len(chunk_results)})")
+        return deduped
 
     def _save_index(self):
         """Сохранить индекс на диск в новом формате (faiss.index + JSON метаданные)"""

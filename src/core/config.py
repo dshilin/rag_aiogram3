@@ -1,3 +1,5 @@
+import os
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -29,7 +31,7 @@ class Settings(BaseSettings):
     vsegpt_api_key: str | None = None
 
     # RAG Settings
-    embedding_model: str = "all-MiniLM-L6-v2"
+    embedding_model: str = "sentence-transformers/distiluse-base-multilingual-cased-v2"
     chunk_size: int = 500
     chunk_overlap: int = 50
     top_k: int = 3
@@ -42,3 +44,9 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# ponytail: pydantic reads .env but doesn't export to os.environ
+# huggingface_hub checks os.environ for HF_TOKEN
+_hf_token = getattr(settings, "hf_token", None)
+if _hf_token:
+    os.environ.setdefault("HF_TOKEN", _hf_token)
