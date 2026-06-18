@@ -282,6 +282,7 @@ class MarkdownChunker:
                 total_stats.total_paragraphs += stats.total_paragraphs
                 total_stats.total_chunks += stats.total_chunks
                 total_stats.empty_pages += stats.empty_pages
+                total_stats.cross_page_paragraphs += stats.cross_page_paragraphs
                 total_stats.files_processed += 1
                 total_stats.errors.extend(stats.errors)
 

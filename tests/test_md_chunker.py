@@ -1,11 +1,8 @@
 """Tests for MarkdownChunker"""
 
 import pytest
-from pathlib import Path
-import tempfile
-import shutil
 
-from src.rag.md_chunker import MarkdownChunker, Chunk
+from src.rag.md_chunker import MarkdownChunker
 
 
 class TestSplitIntoParagraphs:
@@ -39,14 +36,6 @@ class TestSplitIntoParagraphs:
 
 
 class TestCrossPageMerge:
-    @pytest.fixture
-    def temp_md(self, tmp_path):
-        content = (
-            "<!-- Page 1 -->\n"
-            "This paragraph starts on page 1 and continues "
-        )
-        yield content
-
     def test_cross_page_paragraph_merged(self, tmp_path):
         md_file = tmp_path / "test.md"
         md_file.write_text(
