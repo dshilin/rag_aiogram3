@@ -84,12 +84,7 @@ case "$COMMAND" in
         echo ""
         echo -e "${GREEN}[3/4] Индексация чанков в векторной базе...${NC}"
         python -m src.rag.chunk_loader --clear
-        if [[ "$*" == *"--clear"* ]]; then
-            # Already passed to chunker, remove for chunk_loader
-            python -m src.rag.chunk_loader
-        else
-            python -m src.rag.chunk_loader
-        fi
+        python -m src.rag.chunk_loader
         
         # Step 4: Search
         echo ""
