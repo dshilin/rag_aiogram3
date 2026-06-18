@@ -2,298 +2,230 @@
 
 ## Обзор
 
-Система предназначена для разбиения PDF документов на смысловые чанки (по абзацам) с последующим поиском по векторной базе данных с указанием точных цитат и источников.
-
-## Архитектура
+Система предназначена для поиска точных цитат из PDF-документов с указанием источника и страницы. Пайплайн:
 
 ```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  PDF Документы  │ ──> │   Chunker        │ ──> │  JSON Чанки     │
-│  (data/documents)│     │  (chunker.py)    │     │  (chunks/)      │
-└─────────────────┘     └──────────────────┘     └─────────────────┘
-                                                        │
-                                                        ▼
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  Ответ с        │ <── │   Search         │ <── │  FAISS Index    │
-│  цитатами       │     │  (search.py)     │     │  (embeddings/)  │
-└─────────────────┘     └──────────────────┘     └─────────────────┘
+PDF документ
+    │
+    ▼ [1] pdf_to_md.py
+Markdown (<!-- Page X -->)
+    │
+    ▼ [2] clean_markdown.py
+Очищенный Markdown
+    │
+    ▼ [3] md_chunker.py
+JSON чанки с метаданными
+    │
+    ▼ [4] chunk_loader.py
+FAISS индекс (векторное хранилище)
+    │
+    ▼ [5] search.py
+Поиск с цитатами и источниками
 ```
 
-## Компоненты
+Зачем конвертировать PDF → MD перед чанкингом:
+1. **Предсказуемость** — можно прочитать Markdown и проверить, что получилось
+2. **Очистка** — возможность убрать мусор (конвертационные заголовки, номера ISBN, копирайты, артефакты форматирования)
+3. **Контроль** — можно править Markdown вручную перед чанкингом
 
-### 1. Chunker (`src/rag/chunker.py`)
+## Этап 1: PDF → Markdown
 
-Разбивает PDF документы на чанки по абзацам.
+```bash
+python scripts/pdf_to_md.py \
+    --input-dir data/documents/pdf_docs \
+    --output-dir data/documents/md_docs
+```
 
-**Ключевые особенности:**
-- Разбиение по абзацам (разделитель: `\n\n`)
-- Сохранение метаданных: источник, страница, уникальный ID
-- **Универсальное решение для межстраничных абзацев:**
-  - Абзац целиком относится к странице, где он **НАЧИНАЕТСЯ**
-  - Предотвращает дублирование контента
-  - Сохраняет целостность мысли
+**Что делает:**
+- Извлекает текст из PDF через PyMuPDF
+- Детектирует абзацы по координатам, шрифтам и вертикальным промежуткам
+- Распознаёт заголовки глав (оформляет как `# Заголовок`)
+- Вставляет маркеры страниц: `<!-- Page N -->`
+- Сохраняет как Markdown с разделением абзацев через `\n\n`
+
+**Вход:** `data/documents/pdf_docs/*.pdf`
+**Выход:** `data/documents/md_docs/*.md`
+
+## Этап 2: Очистка Markdown
+
+```bash
+python scripts/clean_markdown.py \
+    --input-dir data/documents/md_docs
+```
+
+**Что делает:**
+- Удаляет строки короче 2 символов (кроме маркеров страниц)
+- Удаляет строки из спецсимволов
+- Склеивает строки, разорванные переносом слов (в середине предложения)
+- Удаляет подряд идущие дубликаты строк
+- Ограничивает пустые строки (максимум 2 подряд)
+- Создаёт `.bak` перед изменениями
+
+**Вход:** `data/documents/md_docs/*.md`
+**Выход:** те же файлы (изменяются на месте)
+
+## Этап 3: Разбиение на чанки
+
+```bash
+python -m src.rag.md_chunker \
+    --input-dir data/documents/md_docs \
+    --output-dir data/documents/chunks
+```
+
+**Что делает:**
+- Читает Markdown с маркерами `<!-- Page X -->`
+- Разбивает на страницы по маркерам
+- Внутри каждой страницы разбивает текст на абзацы (по `\n\n`)
+- Каждый абзац → чанк с метаданными
 
 **Структура чанка:**
+
 ```json
 {
   "content": "Текст абзаца...",
   "metadata": {
     "source": "document_name",
     "page": 5,
-    "chunk_id": "a1b2c3d4e5f6",
+    "chunk_id": "a1b2c3d4e5f6g7h8",
     "paragraph_index": 42
   }
 }
 ```
 
-**Использование:**
+**Метаданные:**
+| Поле | Описание |
+|------|----------|
+| `source` | Имя файла без расширения |
+| `page` | Номер страницы из маркера `<!-- Page X -->` |
+| `chunk_id` | MD5-хеш от контента + метаданных (первые 16 символов) |
+| `paragraph_index` | Глобальный порядковый номер абзаца в документе |
+
+**Выход:** `data/documents/chunks/<doc_name>/chunk_NNNN.json` + `index.json`
+
+## Этап 4: Индексация в FAISS
+
 ```bash
-# Разбить все PDF в data/documents
-python -m src.rag.chunker
-
-# Разбить с указанием директорий
-python -m src.rag.chunker --input-dir data/documents --output-dir data/documents/chunks
-
-# Только статистика без сохранения
-python -m src.rag.chunker --no-save
-
-# Превью первых 5 чанков
-python -m src.rag.chunker --preview 5
-```
-
-### 2. Chunk Loader (`src/rag/chunk_loader.py`)
-
-Загружает чанки из JSON файлов в векторное хранилище FAISS.
-
-**Использование:**
-```bash
-# Индексация всех чанков
-python -m src.rag.chunk_loader
-
-# С очисткой существующего индекса
 python -m src.rag.chunk_loader --clear
-
-# С тестовым поиском
-python -m src.rag.chunk_loader --search "Ваш вопрос"
-
-# Пакетная загрузка (по 50 чанков)
-python -m src.rag.chunk_loader --batch-size 50
 ```
 
-### 3. Search (`src/rag/search.py`)
+**Что делает:**
+- Загружает все JSON-чанки из `data/documents/chunks/`
+- Генерирует эмбеддинги через `HuggingFaceEmbeddings`
+- Сохраняет FAISS индекс (точный поиск, Inner Product для нормализованных векторов)
 
-Поиск по векторной базе с выводом цитат и источников.
+**Выход:** `data/embeddings/`
+```
+data/embeddings/
+├── faiss.index              # FAISS векторный индекс
+├── chunks_metadata.json     # Тексты чанков + id_mapping
+└── index_metadata.json      # Модель, размерность, дата
+```
 
-**Использование:**
+## Этап 5: Поиск
+
 ```bash
-# Единичный запрос
-python -m src.rag.search "Что такое машинное обучение?"
-
-# С указанием количества результатов
-python -m src.rag.search "Ваш вопрос" --top-k 10
-
-# С порогом схожести
-python -m src.rag.search "Ваш вопрос" --threshold 0.5
-
-# Подробный вывод
+# Разовый запрос
 python -m src.rag.search "Ваш вопрос" --verbose
-
-# Краткий формат (для Telegram)
-python -m src.rag.search "Ваш вопрос" --short
 
 # Интерактивный режим
 python -m src.rag.search --interactive
+
+# Краткий формат
+python -m src.rag.search "Ваш вопрос" --short
 ```
 
 **Пример вывода:**
 ```
-────────────────────────────────────────────────────────────
 📌 Результат #1 (релевантность: 0.8542)
-
-📚 Источник: `machine_learning_basics`
+📚 Источник: document_name
 📑 Страница: 15
-🆔 ID чанка: `a1b2c3d4e5f6`
-
+🆔 ID чанка: a1b2c3d4e5f6g7h8
 💬 Цитата:
-> Машинное обучение — это подраздел искусственного интеллекта,
-> который позволяет системам автоматически улучшать свою 
-> производительность на основе опыта...
+> Текст найденного абзаца...
 ```
 
-### 4. RAG Tools (`scripts/rag_tools.sh`)
+## Полный цикл
 
-Удобный скрипт для управления всем циклом.
-
-**Использование:**
 ```bash
-# Показать справку
-./scripts/rag_tools.sh help
-
-# Разбиение документов
-./scripts/rag_tools.sh chunk
-
-# Поиск
-./scripts/rag_tools.sh search --query "Ваш вопрос"
-
-# Интерактивный поиск
-./scripts/rag_tools.sh search --interactive
-
-# Полный цикл: разбиение + индексация + поиск
-./scripts/rag_tools.sh full --query "Ваш вопрос"
-
-# Полный цикл с очисткой базы
+# Всё одной командой
 ./scripts/rag_tools.sh full --query "Ваш вопрос" --clear
-```
 
-## Быстрый старт
-
-### 1. Подготовка документов
-
-Поместите PDF файлы в директорию `data/documents/`:
-```bash
-cp /path/to/your/document.pdf data/documents/
-```
-
-### 2. Разбиение на чанки
-
-```bash
-python -m src.rag.chunker
-```
-
-### 3. Индексация
-
-```bash
+# Или по шагам
+python scripts/pdf_to_md.py --input-dir data/documents/pdf_docs --output-dir data/documents/md_docs
+python scripts/clean_markdown.py --input-dir data/documents/md_docs
+python -m src.rag.md_chunker --input-dir data/documents/md_docs --output-dir data/documents/chunks
 python -m src.rag.chunk_loader --clear
-```
-
-### 4. Поиск
-
-```bash
 python -m src.rag.search "Ваш вопрос" --verbose
 ```
 
-Или используйте интерактивный режим:
-```bash
-python -m src.rag.search --interactive
+## Архитектура
+
+```
+data/
+├── documents/
+│   ├── pdf_docs/            # Исходные PDF (gitignored)
+│   │   └── *.pdf
+│   ├── md_docs/             # Markdown после конвертации и очистки
+│   │   └── *.md
+│   └── chunks/              # JSON чанки
+│       ├── doc_name/
+│       │   ├── index.json
+│       │   ├── chunk_0000.json
+│       │   └── ...
+│       └── ...
+└── embeddings/              # FAISS индекс
+    ├── faiss.index
+    ├── chunks_metadata.json
+    └── index_metadata.json
 ```
 
-## Стратегия работы с межстраничными абзацами
-
-**Проблема:** Абзац может начинаться на одной странице и продолжаться на другой.
-
-**Решение:** Абзац целиком относится к странице, где он **НАЧИНАЕТСЯ**.
-
-**Преимущества:**
-1. ✅ Нет дублирования контента
-2. ✅ Сохраняется целостность мысли
-3. ✅ Пользователь получает полный контекст
-4. ✅ Указание одной страницы (не диапазона)
-
-**Пример:**
-```
-Страница 5:
-  ...конец предыдущего абзаца.
-  
-  Начало нового важного абзаца, который описывает
-  ключевую концепцию и продолжается на...
-
-Страница 6:
-  ...следующей странице. Этот абзац содержит важное
-  объяснение...
-```
-
-**Результат:** Весь абзац будет в чанке с указанием `page: 5`
-
-## API для программного использования
-
-```python
-from src.rag import (
-    ParagraphChunker, 
-    RAGService, 
-    search_query,
-    format_citation
-)
-
-# Разбиение документа
-chunker = ParagraphChunker()
-chunks, stats = chunker.chunk_pdf(Path("document.pdf"))
-
-# Индексация
-rag_service = RAGService()
-rag_service.add_documents(
-    texts=[c.content for c in chunks],
-    metadatas=[c.to_dict()["metadata"] for c in chunks]
-)
-
-# Поиск
-results = search_query(
-    query="Ваш вопрос",
-    rag_service=rag_service,
-    top_k=5
-)
-
-# Форматирование результата
-for i, result in enumerate(results, 1):
-    print(format_citation(result, i))
-```
-
-## Настройки
-
-Настройки находятся в `.env` файле:
+## Настройки (.env)
 
 ```env
 # RAG Settings
 EMBEDDING_MODEL=all-MiniLM-L6-v2
-CHUNK_SIZE=500        # Не используется при разбиении по абзацам
-CHUNK_OVERLAP=50      # Не используется при разбиении по абзацам
-TOP_K=5               # Количество результатов по умолчанию
+TOP_K=3
 EMBEDDINGS_DB_PATH=./data/embeddings
 ```
 
-## Структура файлов
+## Программное использование
 
+```python
+from src.rag import RAGService, ChunkResult
+
+rag = RAGService()
+
+# Поиск с метаданными
+results = rag.query_with_metadata("ваш запрос", top_k=3)
+for result in results:
+    print(f"{result.source} (стр. {result.page}): {result.content[:100]}...")
 ```
-data/
-├── documents/           # Исходные PDF файлы
-│   ├── doc1.pdf
-│   └── doc2.pdf
-├── documents/chunks/    # Разбитые чанки (JSON)
-│   ├── doc1/
-│   │   ├── index.json
-│   │   ├── chunk_0000.json
-│   │   └── ...
-│   └── doc2/
-│       └── ...
-└── embeddings/          # Векторное хранилище FAISS
-    ├── faiss_index/
-    │   ├── index.faiss
-    │   └── index.pkl
-    └── index_meta.pkl
-```
+
+## Стратегия работы с межстраничными абзацами
+
+Абзац, начавшийся на одной странице и продолжающийся на другой, целиком относится к странице начала. Это сохраняет целостность мысли и предотвращает дублирование.
+
+*Реализация в `md_chunker.py` — требуется доработка (см. следующий раздел).*
+
+## Известные ограничения (требуют доработки)
+
+1. **Межстраничные абзацы** — `md_chunker.py` пока обрабатывает каждую страницу независимо
+2. **Слияние коротких абзацев** — нет объединения фрагментов < 50 символов с соседними чанками
+3. **Фильтрация мусора** — `clean_markdown.py` не удаляет конвертационные заголовки (`# Конвертированный документ`), ISBN, копирайты
+4. **Разбивка предложений** — эвристика 300/100 символов может дробить абзацы
 
 ## Troubleshooting
 
-### Ошибка: "Векторная база пуста"
-**Решение:** Сначала выполните разбиение и индексацию:
+### Векторная база пуста
 ```bash
-python -m src.rag.chunker
+python -m src.rag.md_chunker
 python -m src.rag.chunk_loader --clear
 ```
 
-### Ошибка: "Директория не найдена"
-**Решение:** Проверьте путь к директории с документами:
-```bash
-ls -la data/documents/
-```
-
 ### Низкое качество поиска
-**Решения:**
-1. Увеличьте `top_k` для большего количества результатов
-2. Установите порог схожести `--threshold 0.3`
-3. Проверьте качество эмбеддингов (модель в настройках)
+1. Увеличьте `top_k` (больше результатов)
+2. Снизьте `score_threshold` (выше召回)
+3. Проверьте эмбеддинг-модель в `.env`
 
-## Дополнительные ресурсы
-
-- [LangChain Text Splitters](https://python.langchain.com/docs/modules/data_connection/document_transformers/)
-- [FAISS Documentation](https://faiss.ai/)
-- [PyMuPDF Documentation](https://pymupdf.readthedocs.io/)
+### Мусор в результатах
+Проверьте Markdown после `clean_markdown.py` — если в нём есть конвертационные заголовки, номера страниц `## Страница 1` или плейсхолдеры, очистка работает некорректно.
