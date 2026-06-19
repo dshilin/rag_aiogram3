@@ -7,13 +7,6 @@ services:
       dockerfile: Dockerfile
     container_name: rag_aiogram3_bot
     restart: unless-stopped
-    env_file:
-      - .env
-    volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-    environment:
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     healthcheck:
       test: ["CMD", "python", "-c", "import os; exit(0 if os.path.exists('/app/data/embeddings') else 1)"]
       interval: 30s

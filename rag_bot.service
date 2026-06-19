@@ -1,0 +1,14 @@
+[Unit]
+Description=RAG Bot (aiogram3)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/rag_bot
+ExecStart=/opt/rag_bot/.venv/bin/python main.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -5,7 +5,8 @@ LABEL description="RAG Telegram Bot (aiogram3)"
 LABEL version="1.0.0"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    HF_HOME=/app/.cache
 
 WORKDIR /app
 
@@ -24,7 +25,7 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 
 COPY --chown=appuser:appuser . .
 
-RUN mkdir -p /app/data/embeddings /app/logs && \
+RUN mkdir -p /app/data/embeddings /app/logs /app/.cache && \
     chown -R appuser:appuser /app
 
 USER appuser

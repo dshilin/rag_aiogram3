@@ -17,7 +17,7 @@ markdownify>=0.11.0
 # Embeddings (CPU-only, без CUDA)
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch>=2.0.0
-sentence-transformers>=2.2.0
+sentence-transformers==3.4.1
 
 # LLM
 openai>=1.0.0

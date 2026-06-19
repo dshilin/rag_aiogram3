@@ -6,12 +6,11 @@ __pycache__/
 venv/
 env/
 .venv/
-.env
 *.egg-info/
 dist/
 build/
 data/documents/
-data/embeddings/
+# data/embeddings/ оставлен чтобы вшить в образ
 logs/
 .git/
 .gitignore
