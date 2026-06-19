@@ -154,7 +154,7 @@ class RAGService:
             except Exception:
                 pass
 
-    @trace()
+    @trace
     def add_documents(self, texts: list[str], metadatas: Optional[list[dict]] = None):
         """
         Добавить документы в векторное хранилище
@@ -194,7 +194,7 @@ class RAGService:
         context = "\n\n".join([r.content for r in results])
         return context
 
-    @trace()
+    @trace
     def query_with_metadata(
         self,
         question: str,

@@ -70,7 +70,7 @@ class YandexGPTClient(LLMClient):
 
         return f"gpt://{settings.yandex_folder_id}/{model_name}/latest"
 
-    @trace(show_result=False)
+    @trace
     def ask(
         self,
         question: str,

@@ -3,7 +3,7 @@
 ## Pipeline
 
 ```
-PDF → pdf_to_md.py → MD → clean_markdown.py → чистый MD → md_chunker.py → JSON chunks → chunk_loader.py → FAISS
+PDF → pdf_to_markdown.py → MD → clean_markdown.py → чистый MD → md_chunker.py → JSON chunks → chunk_loader.py → FAISS
 ```
 
 ## Changes

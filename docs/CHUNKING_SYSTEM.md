@@ -7,7 +7,7 @@
 ```
 PDF документ
     │
-    ▼ [1] pdf_to_md.py
+    ▼ [1] pdf_to_markdown.py
 Markdown (<!-- Page X -->)
     │
     ▼ [2] clean_markdown.py
@@ -31,7 +31,7 @@ FAISS индекс (векторное хранилище)
 ## Этап 1: PDF → Markdown
 
 ```bash
-python scripts/pdf_to_md.py \
+python scripts/pdf_to_markdown.py \
     --input-dir data/documents/pdf_docs \
     --output-dir data/documents/md_docs
 ```
@@ -151,7 +151,7 @@ python -m src.rag.search "Ваш вопрос" --short
 ./scripts/rag_tools.sh full --query "Ваш вопрос" --clear
 
 # Или по шагам
-python scripts/pdf_to_md.py --input-dir data/documents/pdf_docs --output-dir data/documents/md_docs
+python scripts/pdf_to_markdown.py --input-dir data/documents/pdf_docs --output-dir data/documents/md_docs
 python scripts/clean_markdown.py --input-dir data/documents/md_docs
 python -m src.rag.md_chunker --input-dir data/documents/md_docs --output-dir data/documents/chunks
 python -m src.rag.chunk_loader --clear

@@ -42,7 +42,7 @@ class VseGPTClient(LLMClient):
     def model_name(self) -> str:
         return self._model
 
-    @trace(show_result=False)
+    @trace
     def ask(
         self,
         question: str,

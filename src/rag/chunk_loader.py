@@ -1,7 +1,7 @@
 """
 Утилиты для загрузки чанков в RAG систему
 
-Загружает чанки из JSON файлов, созданных скриптом chunk_documents.py,
+Загружает чанки из JSON файлов, созданных скриптом src.rag.md_chunker,
 и добавляет их в векторное хранилище с метаданными.
 """
 
@@ -20,7 +20,7 @@ def load_chunks_from_directory(chunks_dir: Path) -> tuple[list[str], list[dict]]
     Загрузить все чанки из директории
 
     Args:
-        chunks_dir: Директория с чанками (создана chunk_documents.py)
+        chunks_dir: Директория с чанками (создана src.rag.md_chunker)
 
     Returns:
         Кортеж (список текстов, список метаданных)

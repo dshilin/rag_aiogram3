@@ -6,13 +6,7 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from src.rag.service import RAGService
 from src.llm import get_llm_client, SYSTEM_PROMPT_AN
 from src.core.config import settings
-from src.utils.logging import (
-    log_user_message,
-    log_call_flow,
-    trace,
-    set_request_id,
-    generate_request_id,
-)
+from src.utils.logging import log_user_message, log_call_flow, set_request_id, generate_request_id
 from src.bot.session import session_manager
 from src.bot.classifier import classify_query, QueryCategory
 from loguru import logger

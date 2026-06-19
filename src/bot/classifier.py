@@ -50,7 +50,7 @@ class QueryClassifier:
         self._llm_client = llm_client
         self._temperature = temperature
 
-    @trace(show_result=True)
+    @trace
     def classify(self, query: str) -> QueryCategory:
         """
         Классифицировать запрос пользователя

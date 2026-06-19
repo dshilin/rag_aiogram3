@@ -348,7 +348,7 @@ git commit -m "chore: update callers — chunker→md_chunker, search error msg,
 - [ ] **Step 1: Pick a small PDF and run the pipeline**
 
 ```bash
-python scripts/pdf_to_md.py --input-dir data/documents/pdf_docs --output-dir data/documents/md_docs
+python scripts/pdf_to_markdown.py --input-dir data/documents/pdf_docs --output-dir data/documents/md_docs
 python scripts/clean_markdown.py --input-dir data/documents/md_docs
 python -m src.rag.md_chunker --input-dir data/documents/md_docs --output-dir data/documents/chunks
 python -m src.rag.chunk_loader --clear

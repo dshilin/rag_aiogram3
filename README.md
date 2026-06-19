@@ -22,7 +22,6 @@ rag_aiogram3/
 │   └── utils/         # Утилиты (логирование)
 ├── scripts/           # Скрипты обработки документов
 │   ├── pdf_to_markdown.py    # Конвертация PDF → Markdown
-│   ├── chunk_documents.py    # Разделение на чанки
 │   └── clean_markdown.py     # Очистка Markdown
 ├── examples/          # Примеры использования
 ├── docs/              # Документация
@@ -111,11 +110,9 @@ python scripts/pdf_to_markdown.py \
 ### 2. Разделение на чанки с метаданными
 
 ```bash
-python scripts/chunk_documents.py \
+python -m src.rag.md_chunker \
     --input-dir data/documents/md_docs \
-    --output-dir data/documents/chunks \
-    --chunk-size 500 \
-    --overlap 50
+    --output-dir data/documents/chunks
 ```
 
 ### 3. Загрузка чанков в RAG систему
@@ -278,11 +275,7 @@ print(response)
 Содержание чанка...
 ```
 
-### Запуск примеров
 
-```bash
-python examples/rag_chunking_example.py
-```
 
 ## Тесты
 

@@ -15,11 +15,9 @@ python scripts/pdf_to_markdown.py \
 
 ### Шаг 2: Markdown → Chunks
 ```bash
-python scripts/chunk_documents.py \
+python -m src.rag.md_chunker \
     --input-dir data/documents/md_docs \
-    --output-dir data/documents/chunks \
-    --chunk-size 500 \
-    --overlap 50
+    --output-dir data/documents/chunks
 ```
 
 ### Шаг 3: Chunks → Vector Store
@@ -72,13 +70,7 @@ for result in results:
 ## 🧪 Тесты
 
 ```bash
-python -m pytest tests/test_chunking.py -v
-```
-
-## 📖 Примеры
-
-```bash
-python examples/rag_chunking_example.py
+python -m pytest tests/test_md_chunker.py -v
 ```
 
 ## 📝 Параметры
