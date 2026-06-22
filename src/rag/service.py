@@ -17,7 +17,6 @@ from src.utils.logging import trace, log_call_flow
 
 # Константы
 TEST_EMBEDDING_TEXT = "test"
-DEFAULT_METADATA = {}
 
 
 @dataclass
@@ -28,6 +27,7 @@ class ChunkResult:
     page: int
     chunk_id: str
     score: float = 0.0
+    metadata: dict = None
 
     def to_dict(self) -> dict:
         """Конвертировать в словарь"""
@@ -37,6 +37,7 @@ class ChunkResult:
             "page": self.page,
             "chunk_id": self.chunk_id,
             "score": self.score,
+            "metadata": self.metadata,
         }
 
     def format_for_response(self) -> str:
@@ -140,19 +141,7 @@ class RAGService:
         # Инициализируем FAISS индекс
         index = faiss.IndexFlatL2(dim)
         docstore = InMemoryDocstore()
-        self.vectorstore = FAISS(self.embeddings, index, docstore, DEFAULT_METADATA)
-
-        # Инициализируем индекс с пустым документом, затем удаляем его
-        self.vectorstore.add_texts([TEST_EMBEDDING_TEXT])
-        first_doc_id = next(iter(self.vectorstore.index_to_docstore_id.values()), None)
-        if first_doc_id:
-            # Удаление только что добавленного фиктивного документа может вызвать ошибку,
-            # если внутренний docstore уже был очищен (наблюдалось в тестах).
-            # Ошибка не критична, поэтому игнорируем её.
-            try:
-                self.vectorstore.delete([first_doc_id])
-            except Exception:
-                pass
+        self.vectorstore = FAISS(self.embeddings, index, docstore, {})
 
     @trace
     def add_documents(self, texts: list[str], metadatas: Optional[list[dict]] = None):
@@ -200,41 +189,64 @@ class RAGService:
         question: str,
         top_k: Optional[int] = None,
         score_threshold: float = 0.0,
+        metadata_filter: Optional[dict] = None,
+        expand_definitions: bool = True,
     ) -> list[ChunkResult]:
         log_call_flow(f"RAG query: '{question[:50]}...' top_k={top_k or settings.top_k}")
-        
+
         if self.vectorstore is None:
             log_call_flow("Vector store is None, returning empty results")
             return []
 
         k = top_k or settings.top_k
-        results = self.vectorstore.similarity_search_with_score(question, k=k)
+        results = self.vectorstore.similarity_search_with_score(question, k=k * 2)
 
-        chunk_results = [
-            ChunkResult(
-                content=doc.page_content,
-                source=doc.metadata.get("source", "unknown"),
-                page=doc.metadata.get("page", 0),
-                chunk_id=doc.metadata.get("chunk_id", doc.metadata.get("chunk_index", "unknown")),
-                score=score,
+        chunk_results = []
+        for doc, score in results:
+            meta = doc.metadata or {}
+            if metadata_filter:
+                if not all(meta.get(k) == v for k, v in metadata_filter.items()):
+                    continue
+            if score < score_threshold:
+                continue
+            chunk_results.append(
+                ChunkResult(
+                    content=doc.page_content,
+                    source=meta.get("source", meta.get("book_title", "unknown")),
+                    page=meta.get("page", 0),
+                    chunk_id=meta.get("chunk_id", "unknown"),
+                    score=score,
+                    metadata=meta,
+                )
             )
-            for doc, score in results
-            if score >= score_threshold
-        ]
 
         chunk_results.sort(key=lambda x: x.score, reverse=True)
 
-        # ponytail: dedup by (source, page), keep highest score
+        # expand definitions before dedup
+        if expand_definitions and self.vectorstore:
+            for r in chunk_results:
+                def_ref_id = (r.metadata or {}).get("definition_ref_id")
+                if def_ref_id:
+                    for doc_id in self.vectorstore.index_to_docstore_id.values():
+                        doc = self.vectorstore.docstore.search(doc_id)
+                        if doc and doc.metadata.get("chunk_id") == def_ref_id:
+                            def_content = doc.page_content if hasattr(doc, 'page_content') else str(doc)
+                            r.content = f"[Определение]\n{def_content}\n\n{r.content}"
+                            break
+
+        # dedup by (source, page), skip definition chunks (already merged into body chunks)
         seen = set()
         deduped = []
         for r in chunk_results:
+            if expand_definitions and (r.metadata or {}).get("chunk_role") == "definition":
+                continue
             key = (r.source, r.page)
             if key not in seen:
                 seen.add(key)
                 deduped.append(r)
 
         log_call_flow(f"RAG query returned {len(deduped)} results (deduped from {len(chunk_results)})")
-        return deduped
+        return deduped[:k]
 
     def _save_index(self):
         """Сохранить индекс на диск в новом формате (faiss.index + JSON метаданные)"""
