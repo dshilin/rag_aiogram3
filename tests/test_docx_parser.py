@@ -1,9 +1,11 @@
+import hashlib
 from pathlib import Path
+
 from docx import Document as DocxDocument
 
 import pytest
 
-from src.rag.docx_parser import DocxParser
+from src.rag.docx_parser import DocxParser, DocxChunk
 
 
 def _make_docx(paragraphs: list[tuple], tmp_path: Path) -> Path:
@@ -94,3 +96,38 @@ class TestStepDefinition:
         assert chunks[0].metadata["citation_label"] == (
             "«Базовый текст АН», Глава «Шаг Первый», Раздел «Бессилие и неуправляемость»"
         )
+
+
+class TestChunking:
+    def test_short_paragraphs_merged(self, parser, tmp_path):
+        path = _make_docx([
+            ("Шаг Первый", "h3"),
+            ("«Мы признали, что бессильны.»", None),
+            ("Короткий текст.", None),
+            ("Еще короткий.", None),
+            ("Третий короткий.", None),
+        ], tmp_path)
+        chunks = parser.parse(path)
+        body_chunks = [c for c in chunks if c.metadata["chunk_role"] == "body"]
+        assert len(body_chunks) < 3  # merged
+
+    def test_long_paragraph_split(self, parser, tmp_path):
+        long_text = "Предложение. " * 2000
+        path = _make_docx([
+            ("Шаг Первый", "h3"),
+            ("«Мы признали.»", None),
+            (long_text, None),
+        ], tmp_path)
+        chunks = parser.parse(path)
+        body_chunks = [c for c in chunks if c.metadata["chunk_role"] == "body"]
+        assert len(body_chunks) > 1  # split
+
+    def test_na_concepts_detected(self, parser, tmp_path):
+        path = _make_docx([
+            ("Базовый текст АН", "h1"),
+            ("Капитуляция смирение выздоровление.", None),
+        ], tmp_path)
+        chunks = parser.parse(path)
+        assert "капитуляция" in chunks[0].metadata["na_concepts"]
+        assert "смирение" in chunks[0].metadata["na_concepts"]
+        assert "выздоровление" in chunks[0].metadata["na_concepts"]

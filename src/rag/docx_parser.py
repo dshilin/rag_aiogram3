@@ -1,4 +1,5 @@
 import hashlib
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -136,7 +137,72 @@ class DocxParser:
         return ("main_text", None)
 
     def _post_process(self, chunks: list[DocxChunk]) -> list[DocxChunk]:
-        return chunks
+        if not chunks:
+            return chunks
+
+        merged = [chunks[0]]
+        for chunk in chunks[1:]:
+            prev_is_def = merged[-1].metadata.get("chunk_role") == "definition"
+            curr_is_def = chunk.metadata.get("chunk_role") == "definition"
+
+            if not prev_is_def and not curr_is_def and self._estimate_tokens(merged[-1].content) < self.min_chunk_tokens:
+                merged[-1].content += " " + chunk.content
+                continue
+
+            if not curr_is_def and self._estimate_tokens(chunk.content) > self.max_chunk_tokens:
+                split = self._split_chunk(chunk)
+                merged.extend(split)
+                continue
+
+            merged.append(chunk)
+
+        return merged
+
+    def _split_chunk(self, chunk: DocxChunk) -> list[DocxChunk]:
+        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', chunk.content) if s.strip()]
+        if len(sentences) < 2:
+            return [chunk]
+
+        parts = []
+        current = []
+        current_tokens = 0
+        overlap_tokens = int(self.max_chunk_tokens * self.overlap_ratio)
+
+        for sent in sentences:
+            sent_tokens = self._estimate_tokens(sent)
+            if current_tokens + sent_tokens > self.max_chunk_tokens and current:
+                text = " ".join(current)
+                new_chunk = DocxChunk(
+                    content=text,
+                    metadata=dict(chunk.metadata),
+                )
+                new_chunk.metadata["chunk_id"] = hashlib.md5((text[:100]).encode()).hexdigest()[:16]
+                parts.append(new_chunk)
+
+                overlap = []
+                overlap_tok = 0
+                for s in reversed(current):
+                    t = self._estimate_tokens(s)
+                    if overlap_tok + t > overlap_tokens:
+                        break
+                    overlap.insert(0, s)
+                    overlap_tok += t
+                current = overlap
+                current_tokens = overlap_tok
+
+            current.append(sent)
+            current_tokens += sent_tokens
+
+        if current:
+            text = " ".join(current)
+            new_chunk = DocxChunk(
+                content=text,
+                metadata=dict(chunk.metadata),
+            )
+            new_chunk.metadata["chunk_id"] = hashlib.md5((text[:100]).encode()).hexdigest()[:16]
+            parts.append(new_chunk)
+
+        return parts
 
     def _estimate_tokens(self, text: str) -> int:
         return int(len(text.split()) * 1.3)
