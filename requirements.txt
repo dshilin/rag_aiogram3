@@ -14,6 +14,9 @@ faiss-cpu>=1.7.4
 pymupdf>=1.23.0
 markdownify>=0.11.0
 
+# DOCX Processing
+python-docx>=1.1.0
+
 # Embeddings (CPU-only, без CUDA)
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch>=2.0.0

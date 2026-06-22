@@ -55,3 +55,42 @@ def test_document_count(rag_service: RAGService):
     
     final_count = rag_service.get_document_count()
     assert final_count >= initial_count + 2
+
+
+class TestMetadataFilter:
+    def test_filter_by_book_title(self, rag_service):
+        rag_service.add_documents(
+            ["Текст про первый шаг.", "Текст про второй шаг."],
+            [{"book_title": "Базовый текст АН"}, {"book_title": "Это работает"}],
+        )
+        results = rag_service.query_with_metadata(
+            "первый шаг", top_k=5, metadata_filter={"book_title": "Базовый текст АН"}
+        )
+        assert all(r.metadata.get("book_title") == "Базовый текст АН" for r in results)
+
+    def test_filter_excludes_non_matching(self, rag_service):
+        rag_service.add_documents(
+            ["Текст про капитуляцию.", "Текст про смирение."],
+            [{"book_title": "Базовый текст АН"}, {"book_title": "Это работает"}],
+        )
+        results = rag_service.query_with_metadata(
+            "капитуляция", top_k=5, metadata_filter={"book_title": "Несуществующая книга"}
+        )
+        assert len(results) == 0
+
+
+class TestDefinitionExpansion:
+    def test_definition_prepended_to_body(self, rag_service):
+        def_id = "def_001"
+        rag_service.add_documents(
+            ["Текст главы."],
+            [{"definition_ref_id": def_id, "chunk_role": "body", "book_title": "Тест"}],
+        )
+        rag_service.add_documents(
+            ["«Определение шага.»"],
+            [{"chunk_id": def_id, "chunk_role": "definition", "book_title": "Тест"}],
+        )
+        results = rag_service.query_with_metadata(
+            "текст главы", top_k=5, expand_definitions=True
+        )
+        assert any("[Определение]" in r.content for r in results)
