@@ -206,3 +206,55 @@ class DocxParser:
 
     def _estimate_tokens(self, text: str) -> int:
         return int(len(text.split()) * 1.3)
+
+
+def main():
+    import argparse
+    import sys
+    from loguru import logger
+
+    logger.remove()
+    logger.add(sys.stdout, format="{time} | {level} | {message}", level="INFO")
+
+    parser = argparse.ArgumentParser(description="Parse .docx and index into FAISS")
+    parser.add_argument("path", type=Path, help="Path to .docx file or directory")
+    parser.add_argument("--clear", action="store_true", help="Clear existing index")
+
+    args = parser.parse_args()
+    path = args.path
+
+    if not path.exists():
+        logger.error(f"Path not found: {path}")
+        return 1
+
+    if path.is_dir():
+        files = sorted(path.glob("*.docx"))
+    else:
+        files = [path]
+
+    if not files:
+        logger.error("No .docx files found")
+        return 1
+
+    from src.rag.service import RAGService
+    rag = RAGService()
+
+    if args.clear:
+        rag.clear()
+
+    docx_parser = DocxParser()
+    for f in files:
+        logger.info(f"Parsing: {f}")
+        chunks = docx_parser.parse(f)
+        texts = [c.content for c in chunks]
+        metadatas = [c.metadata for c in chunks]
+        rag.add_documents(texts, metadatas)
+        logger.info(f"  Indexed {len(chunks)} chunks from {f.name}")
+
+    logger.success(f"Done. Total chunks: {rag.get_document_count()}")
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())

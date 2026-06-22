@@ -131,3 +131,57 @@ class TestChunking:
         assert "капитуляция" in chunks[0].metadata["na_concepts"]
         assert "смирение" in chunks[0].metadata["na_concepts"]
         assert "выздоровление" in chunks[0].metadata["na_concepts"]
+
+
+import shutil
+from src.rag.service import RAGService
+
+
+@pytest.fixture
+def rag_service(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "src.rag.service.settings.embeddings_db_path",
+        str(tmp_path),
+    )
+    service = RAGService()
+    yield service
+    service.clear()
+
+
+class TestIntegration:
+    def test_parse_then_index_then_search(self, rag_service, tmp_path):
+        path = _make_docx([
+            ("Базовый текст", "h1"),
+            ("Шаг Первый", "h3"),
+            ("«Мы признали, что бессильны.»", None),
+            ("Капитуляция — это ключ к выздоровлению.", None),
+        ], tmp_path)
+        parser = DocxParser()
+        chunks = parser.parse(path)
+        texts = [c.content for c in chunks]
+        metadatas = [c.metadata for c in chunks]
+        rag_service.add_documents(texts, metadatas)
+
+        results = rag_service.query_with_metadata(
+            "капитуляция", top_k=5, metadata_filter={"book_title": "Базовый текст"}
+        )
+        assert len(results) > 0
+        assert results[0].metadata.get("book_title") == "Базовый текст"
+
+    def test_definition_expansion_pipeline(self, rag_service, tmp_path):
+        path = _make_docx([
+            ("Шаг Первый", "h3"),
+            ("«Мы признали, что бессильны.»", None),
+            ("Текст с капитуляцией.", None),
+        ], tmp_path)
+        parser = DocxParser()
+        chunks = parser.parse(path)
+        texts = [c.content for c in chunks]
+        metadatas = [c.metadata for c in chunks]
+        rag_service.add_documents(texts, metadatas)
+
+        results = rag_service.query_with_metadata(
+            "капитуляция", top_k=5, expand_definitions=True
+        )
+        body_results = [r for r in results if "[Определение]" in r.content]
+        assert len(body_results) > 0
