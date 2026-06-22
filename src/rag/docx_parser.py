@@ -1,0 +1,142 @@
+import hashlib
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Optional
+
+from docx import Document as DocxDocument
+
+
+@dataclass
+class DocxChunk:
+    content: str
+    chunk_id: str = ""
+    metadata: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        if not self.chunk_id:
+            self.chunk_id = hashlib.md5(
+                (self.content[:100]).encode("utf-8")
+            ).hexdigest()[:16]
+
+
+class DocxParser:
+    def __init__(self, min_chunk_tokens=250, max_chunk_tokens=1200, overlap_ratio=0.15):
+        self.min_chunk_tokens = min_chunk_tokens
+        self.max_chunk_tokens = max_chunk_tokens
+        self.overlap_ratio = overlap_ratio
+        self.na_concepts_map = {
+            "капитуляция", "смирение", "Высшая Сила", "групповое сознание",
+            "духовное пробуждение", "спонсорство", "только сегодня", "бессилие",
+            "неуправляемость", "честность", "открытость", "готовность",
+            "единство", "служение", "терапевтическая ценность", "выздоровление",
+            "духовность", "принципы", "традиции", "шаги",
+        }
+
+    def parse(self, path: Path) -> list[DocxChunk]:
+        doc = DocxDocument(str(path))
+        hierarchy = {"book_title": "", "part": None, "chapter": None, "section": None}
+        definition_id = None
+        chunks = []
+
+        for para in doc.paragraphs:
+            text = para.text.strip()
+            if not text:
+                continue
+
+            style_name = para.style.name if para.style else "Normal"
+            detected = self._detect_heading(text, style_name, hierarchy)
+
+            if detected:
+                level, value = detected
+                if level == "book_title":
+                    hierarchy = {"book_title": value, "part": None, "chapter": None, "section": None}
+                elif level == "part":
+                    hierarchy["part"] = value
+                    hierarchy["chapter"] = None
+                    hierarchy["section"] = None
+                elif level == "chapter":
+                    hierarchy["chapter"] = value
+                    hierarchy["section"] = None
+                    definition_id = None
+                elif level == "section":
+                    hierarchy["section"] = value
+                continue
+
+            if self._is_definition(text):
+                definition_id = hashlib.md5((text[:100]).encode("utf-8")).hexdigest()[:16]
+                chunk = self._make_chunk(text, hierarchy, "definition", definition_id, definition_id)
+                chunks.append(chunk)
+                continue
+
+            chunk = self._make_chunk(text, hierarchy, "body", definition_id, None)
+            chunks.append(chunk)
+
+        return self._post_process(chunks)
+
+    def _detect_heading(self, text: str, style_name: str, hierarchy: dict) -> Optional[tuple[str, str]]:
+        style_lower = style_name.lower()
+        if "heading 1" in style_lower or "heading1" in style_lower:
+            return ("book_title", text)
+        if "heading 2" in style_lower or "heading2" in style_lower:
+            return ("part", text)
+        if "heading 3" in style_lower or "heading3" in style_lower:
+            return ("chapter", text)
+        if "heading 4" in style_lower or "heading4" in style_lower:
+            return ("section", text)
+        words = text.split()
+        if 1 <= len(words) <= 5 and not text.rstrip().endswith((".", "!", "?", ":", ";", "»")):
+            if any(kw in text.lower() for kw in ["шаг", "традици", "книга", "часть"]):
+                return ("chapter", text)
+        return None
+
+    def _is_definition(self, text: str) -> bool:
+        return text.startswith("«") and text.endswith("»")
+
+    def _make_chunk(self, text, hierarchy, role, definition_id, chunk_id):
+        element_type, element_number = self._classify_chapter(hierarchy.get("chapter"))
+        parts = [f"«{hierarchy.get('book_title', '')}»"]
+        if hierarchy.get("chapter"):
+            parts.append(f"Глава «{hierarchy['chapter']}»")
+        if hierarchy.get("section"):
+            parts.append(f"Раздел «{hierarchy['section']}»")
+        citation_label = ", ".join(parts)
+
+        metadata = {
+            "chunk_id": chunk_id or hashlib.md5((text[:100]).encode()).hexdigest()[:16],
+            "book_title": hierarchy.get("book_title", ""),
+            "part": hierarchy.get("part"),
+            "chapter": hierarchy.get("chapter", ""),
+            "section": hierarchy.get("section"),
+            "page": None,
+            "element_type": element_type,
+            "element_number": element_number,
+            "chunk_role": role,
+            "citation_label": citation_label,
+            "definition_ref_id": definition_id,
+            "na_concepts": [c for c in self.na_concepts_map if c.lower() in text.lower()],
+            "keywords": [],
+            "source": hierarchy.get("book_title", ""),
+        }
+        return DocxChunk(content=text, chunk_id=metadata["chunk_id"], metadata=metadata)
+
+    def _classify_chapter(self, chapter: Optional[str]) -> tuple:
+        if not chapter:
+            return ("main_text", None)
+        chapter_lower = chapter.lower()
+        if "шаг" in chapter_lower:
+            for w in chapter_lower.split():
+                if w.isdigit():
+                    return ("step", int(w))
+            return ("step", None)
+        if "традици" in chapter_lower:
+            for w in chapter_lower.split():
+                if w.isdigit():
+                    return ("tradition", int(w))
+            return ("tradition", None)
+        return ("main_text", None)
+
+    def _post_process(self, chunks: list[DocxChunk]) -> list[DocxChunk]:
+        return chunks
+
+    def _estimate_tokens(self, text: str) -> int:
+        return int(len(text.split()) * 1.3)

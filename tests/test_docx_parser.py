@@ -22,3 +22,40 @@ def _make_docx(paragraphs: list[tuple], tmp_path: Path) -> Path:
 @pytest.fixture
 def parser():
     return DocxParser()
+
+
+class TestHierarchy:
+    def test_h1_detected_as_book_title(self, parser, tmp_path):
+        path = _make_docx([
+            ("Базовый текст АН", "h1"),
+            ("Текст абзаца.", None),
+        ], tmp_path)
+        chunks = parser.parse(path)
+        assert len(chunks) == 1
+        assert chunks[0].metadata["book_title"] == "Базовый текст АН"
+
+    def test_h2_h3_h4_nesting(self, parser, tmp_path):
+        path = _make_docx([
+            ("Базовый текст", "h1"),
+            ("КНИГА ПЕРВАЯ. Шаги", "h2"),
+            ("Шаг Первый", "h3"),
+            ("Бессилие и неуправляемость", "h4"),
+            ("Текст про бессилие.", None),
+        ], tmp_path)
+        chunks = parser.parse(path)
+        assert len(chunks) == 1
+        m = chunks[0].metadata
+        assert m["book_title"] == "Базовый текст"
+        assert m["part"] == "КНИГА ПЕРВАЯ. Шаги"
+        assert m["chapter"] == "Шаг Первый"
+        assert m["section"] == "Бессилие и неуправляемость"
+
+    def test_plain_text_heading_heuristic(self, parser, tmp_path):
+        path = _make_docx([
+            ("Базовый текст", "h1"),
+            ("Шаг Первый", None),
+            ("Текст абзаца.", None),
+        ], tmp_path)
+        chunks = parser.parse(path)
+        assert len(chunks) == 1
+        assert chunks[0].metadata["chapter"] == "Шаг Первый"
