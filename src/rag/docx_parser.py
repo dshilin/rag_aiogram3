@@ -1,10 +1,58 @@
 import hashlib
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
 from docx import Document as DocxDocument
+
+_RUSSIAN_STOPWORDS = {
+    "и", "в", "во", "не", "что", "он", "на", "я", "с", "со", "как", "а", "то",
+    "все", "она", "так", "его", "но", "да", "ты", "к", "у", "же", "вы", "за",
+    "бы", "по", "из", "им", "от", "о", "для", "или", "еще", "до", "это", "об",
+    "ни", "их", "чем", "при", "был", "когда", "кто", "меня", "нет", "вот",
+    "теперь", "если", "уже", "будет", "даже", "потом", "чтобы", "себя", "них",
+    "него", "нее", "там", "тому", "ли", "ну", "всё", "все", "очень",
+    "разве", "ведь", "опять", "другой", "пока", "над", "под", "без",
+}
+
+
+# ponytail: natasha model loads ~100MB, ~5s cold start.
+# Replace with lightweight keyword extraction if index rebuild speed matters.
+def _get_morph_pipeline():
+    if not hasattr(_get_morph_pipeline, "_cache"):
+        from natasha import MorphVocab, NewsEmbedding, NewsMorphTagger, Segmenter
+        emb = NewsEmbedding()
+        _get_morph_pipeline._cache = {
+            "segmenter": Segmenter(),
+            "morph_tagger": NewsMorphTagger(emb),
+            "morph_vocab": MorphVocab(),
+        }
+    return _get_morph_pipeline._cache
+
+
+# ponytail: only NOUN/PROPN, misses adjective-as-noun and multiword concepts (e.g. "Высшая Сила" handled by na_concepts instead).
+def _extract_keywords(text: str, top_n: int = 5) -> list[str]:
+    pipeline = _get_morph_pipeline()
+    from natasha import Doc
+
+    doc = Doc(text.lower())
+    doc.segment(pipeline["segmenter"])
+    doc.tag_morph(pipeline["morph_tagger"])
+
+    lemmas = []
+    for token in doc.tokens:
+        if token.pos not in ("NOUN", "PROPN"):
+            continue
+        token.lemmatize(pipeline["morph_vocab"])
+        lemma = token.lemma
+        if len(lemma) <= 2 or lemma in _RUSSIAN_STOPWORDS or lemma.isdigit():
+            continue
+        lemmas.append(lemma)
+
+    top = Counter(lemmas).most_common(top_n)
+    return [w for w, _ in top]
 
 
 @dataclass
@@ -35,7 +83,7 @@ class DocxParser:
 
     def parse(self, path: Path) -> list[DocxChunk]:
         doc = DocxDocument(str(path))
-        hierarchy = {"book_title": "", "part": None, "chapter": None, "section": None}
+        hierarchy = {"book_title": path.stem, "part": None, "chapter": None, "section": None}
         definition_id = None
         chunks = []
 
@@ -49,9 +97,7 @@ class DocxParser:
 
             if detected:
                 level, value = detected
-                if level == "book_title":
-                    hierarchy = {"book_title": value, "part": None, "chapter": None, "section": None}
-                elif level == "part":
+                if level == "part":
                     hierarchy["part"] = value
                     hierarchy["chapter"] = None
                     hierarchy["section"] = None
@@ -76,30 +122,39 @@ class DocxParser:
 
     def _detect_heading(self, text: str, style_name: str, hierarchy: dict) -> Optional[tuple[str, str]]:
         style_lower = style_name.lower()
-        if "heading 1" in style_lower or "heading1" in style_lower:
-            return ("book_title", text)
-        if "heading 2" in style_lower or "heading2" in style_lower:
+        if text.strip().upper().startswith("КНИГА"):
             return ("part", text)
-        if "heading 3" in style_lower or "heading3" in style_lower:
+        if "heading 1" in style_lower or "heading1" in style_lower:
             return ("chapter", text)
+        if "heading 2" in style_lower or "heading2" in style_lower:
+            return ("section", text)
+        if "heading 3" in style_lower or "heading3" in style_lower:
+            return ("section", text)
         if "heading 4" in style_lower or "heading4" in style_lower:
             return ("section", text)
         words = text.split()
         if 1 <= len(words) <= 5 and not text.rstrip().endswith((".", "!", "?", ":", ";", "»")):
             if any(kw in text.lower() for kw in ["шаг", "традици", "книга", "часть"]):
-                return ("chapter", text)
+                return ("section", text)
         return None
 
     def _is_definition(self, text: str) -> bool:
-        return text.startswith("«") and text.endswith("»")
+        stripped = text.rstrip(".!?,")
+        return text.startswith("«") and stripped.endswith("»")
 
     def _make_chunk(self, text, hierarchy, role, definition_id, chunk_id):
         element_type, element_number = self._classify_chapter(hierarchy.get("chapter"))
         parts = [f"«{hierarchy.get('book_title', '')}»"]
+        if hierarchy.get("part"):
+            parts.append(hierarchy["part"])
         if hierarchy.get("chapter"):
             parts.append(f"Глава «{hierarchy['chapter']}»")
         if hierarchy.get("section"):
-            parts.append(f"Раздел «{hierarchy['section']}»")
+            sec = hierarchy["section"]
+            if any(sec.lower().startswith(p) for p in ["шаг", "глава", "традици", "книга"]):
+                parts.append(sec)
+            else:
+                parts.append(f"Раздел «{sec}»")
         citation_label = ", ".join(parts)
 
         metadata = {
@@ -115,7 +170,7 @@ class DocxParser:
             "citation_label": citation_label,
             "definition_ref_id": definition_id,
             "na_concepts": [c for c in self.na_concepts_map if c.lower() in text.lower()],
-            "keywords": [],
+            "keywords": _extract_keywords(text),
             "source": hierarchy.get("book_title", ""),
         }
         return DocxChunk(content=text, chunk_id=metadata["chunk_id"], metadata=metadata)
