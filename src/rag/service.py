@@ -228,6 +228,19 @@ class RAGService:
 
         chunk_results.sort(key=lambda x: x.score, reverse=True)
 
+        # ponytail: fixed 0.15 boost + Jaccard-like overlap. Switch to weighted BM25-style reranking if precision at top-1 matters.
+        from src.rag.docx_parser import _extract_keywords
+        query_keywords = set(_extract_keywords(question))
+        if query_keywords:
+            KEYWORD_BOOST = 0.15
+            for r in chunk_results:
+                chunk_kw = set((r.metadata or {}).get("keywords", []))
+                overlap = query_keywords & chunk_kw
+                if overlap:
+                    overlap_score = len(overlap) / max(len(query_keywords), len(chunk_kw))
+                    r.score += KEYWORD_BOOST * overlap_score
+            chunk_results.sort(key=lambda x: x.score, reverse=True)
+
         # expand definitions before dedup
         if expand_definitions and self.vectorstore:
             for r in chunk_results:
