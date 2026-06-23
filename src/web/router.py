@@ -116,12 +116,12 @@ async def chat(req: ChatRequest):
             if results:
                 context_parts = []
                 for chunk in results:
+                    citation = chunk.metadata.get("citation_label", chunk.source) if chunk.metadata else chunk.source
                     context_parts.append(
-                        f"[Источник: {chunk.source}, стр. {chunk.page}]\n{chunk.content}"
+                        f"[Источник: {citation}]\n{chunk.content}"
                     )
                     sources.append({
-                        "source": chunk.source,
-                        "page": chunk.page,
+                        "source": citation,
                         "content": chunk.content[:200],
                     })
 
@@ -130,13 +130,15 @@ async def chat(req: ChatRequest):
                 answer = llm_client.ask(
                     question=query,
                     context=context,
-                    sources=[f"{s['source']} (стр. {s['page']})" for s in sources],
+                    sources=[s["source"] for s in sources],
                     conversation_history=session_history,
                 )
 
-                if sources:
+                # ponytail: if LLM refuses to answer, suppress sources
+                _refusal_patterns = ("не могу", "не могу обсуждать", "не могу ответить", "не уместно", "не этично")
+                if sources and not any(p in answer.lower() for p in _refusal_patterns):
                     sources_text = "\n\n📚 **Источники:**\n"
-                    sources_text += "\n".join(f"• {s['source']} (стр. {s['page']})" for s in sources)
+                    sources_text += "\n".join(f"• {s['source']}" for s in sources)
                     answer += sources_text
 
                 response = answer

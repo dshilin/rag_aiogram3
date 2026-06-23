@@ -35,7 +35,7 @@ class DocxParser:
 
     def parse(self, path: Path) -> list[DocxChunk]:
         doc = DocxDocument(str(path))
-        hierarchy = {"book_title": "", "part": None, "chapter": None, "section": None}
+        hierarchy = {"book_title": path.stem, "part": None, "chapter": None, "section": None}
         definition_id = None
         chunks = []
 
@@ -49,9 +49,7 @@ class DocxParser:
 
             if detected:
                 level, value = detected
-                if level == "book_title":
-                    hierarchy = {"book_title": value, "part": None, "chapter": None, "section": None}
-                elif level == "part":
+                if level == "part":
                     hierarchy["part"] = value
                     hierarchy["chapter"] = None
                     hierarchy["section"] = None
@@ -76,30 +74,39 @@ class DocxParser:
 
     def _detect_heading(self, text: str, style_name: str, hierarchy: dict) -> Optional[tuple[str, str]]:
         style_lower = style_name.lower()
-        if "heading 1" in style_lower or "heading1" in style_lower:
-            return ("book_title", text)
-        if "heading 2" in style_lower or "heading2" in style_lower:
+        if text.strip().upper().startswith("КНИГА"):
             return ("part", text)
-        if "heading 3" in style_lower or "heading3" in style_lower:
+        if "heading 1" in style_lower or "heading1" in style_lower:
             return ("chapter", text)
+        if "heading 2" in style_lower or "heading2" in style_lower:
+            return ("section", text)
+        if "heading 3" in style_lower or "heading3" in style_lower:
+            return ("section", text)
         if "heading 4" in style_lower or "heading4" in style_lower:
             return ("section", text)
         words = text.split()
         if 1 <= len(words) <= 5 and not text.rstrip().endswith((".", "!", "?", ":", ";", "»")):
             if any(kw in text.lower() for kw in ["шаг", "традици", "книга", "часть"]):
-                return ("chapter", text)
+                return ("section", text)
         return None
 
     def _is_definition(self, text: str) -> bool:
-        return text.startswith("«") and text.endswith("»")
+        stripped = text.rstrip(".!?,")
+        return text.startswith("«") and stripped.endswith("»")
 
     def _make_chunk(self, text, hierarchy, role, definition_id, chunk_id):
         element_type, element_number = self._classify_chapter(hierarchy.get("chapter"))
         parts = [f"«{hierarchy.get('book_title', '')}»"]
+        if hierarchy.get("part"):
+            parts.append(hierarchy["part"])
         if hierarchy.get("chapter"):
             parts.append(f"Глава «{hierarchy['chapter']}»")
         if hierarchy.get("section"):
-            parts.append(f"Раздел «{hierarchy['section']}»")
+            sec = hierarchy["section"]
+            if any(sec.lower().startswith(p) for p in ["шаг", "глава", "традици", "книга"]):
+                parts.append(sec)
+            else:
+                parts.append(f"Раздел «{sec}»")
         citation_label = ", ".join(parts)
 
         metadata = {

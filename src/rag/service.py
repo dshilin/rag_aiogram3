@@ -83,7 +83,7 @@ class RAGService:
         chunks_meta_path = Path(settings.embeddings_db_path) / "chunks_metadata.json"
 
         if not index_path.exists() or not chunks_meta_path.exists():
-            logger.warning("FAISS индекс не найден. Создайте через chunk_loader")
+            logger.warning("FAISS индекс не найден. Будет создан при добавлении документов")
             return None
 
         log_call_flow(f"Loading index: {index_path}")
@@ -160,16 +160,22 @@ class RAGService:
         log_call_flow(f"Adding {len(texts)} documents to vector store")
         self._ensure_index()
 
-        documents = [
-            Document(
-                page_content=text,
-                metadata=metadatas[i] if metadatas and i < len(metadatas) else {}
-            )
-            for i, text in enumerate(texts)
-        ]
-
-        self.vectorstore.add_documents(documents)
-        self._save_index()
+        batch_size = 50
+        for i in range(0, len(texts), batch_size):
+            batch_texts = texts[i:i + batch_size]
+            batch_metas = metadatas[i:i + batch_size] if metadatas else None
+            documents = [
+                Document(
+                    page_content=text,
+                    metadata=batch_metas[j] if batch_metas and j < len(batch_metas) else {}
+                )
+                for j, text in enumerate(batch_texts)
+            ]
+            logger.info(f"⏳ Эмбеддинг батч {i//batch_size + 1}/{(len(texts)-1)//batch_size + 1} ({len(batch_texts)} чанков)...")
+            self.vectorstore.add_documents(documents)
+            self._save_index()
+            logger.info(f"✅ Батч {i//batch_size + 1} готов")
+        logger.info(f"✅ Закончен эмбеддинг всех {len(texts)} чанков")
         log_call_flow(f"Successfully added {len(texts)} documents")
 
     def query(self, question: str, top_k: Optional[int] = None) -> Optional[str]:
