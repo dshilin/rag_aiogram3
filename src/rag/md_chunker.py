@@ -225,6 +225,27 @@ class MarkdownChunker:
                         logger.debug(f"  Иерархия: section={value}")
                     continue
 
+                if para.strip().startswith("**Только сегодня:**"):
+                    chunk = Chunk(
+                        content=para,
+                        source=source_name,
+                        book_title=hierarchy["book_title"],
+                        part=hierarchy["part"],
+                        chapter=hierarchy["chapter"],
+                        section=hierarchy["section"],
+                        element_type=hierarchy["element_type"],
+                        element_number=hierarchy["element_number"],
+                        chunk_role="just_for_today",
+                        definition_ref_id=current_definition_id,
+                        citation_label=self._build_citation_label(hierarchy),
+                        na_concepts=self._detect_na_concepts(para),
+                        keywords=_extract_keywords(para),
+                        paragraph_index=global_paragraph_index,
+                    )
+                    chunks.append(chunk)
+                    global_paragraph_index += 1
+                    continue
+
                 if self._is_definition(para):
                     chunk_id = hashlib.md5(
                         (para[:100]).encode("utf-8")
@@ -293,8 +314,8 @@ class MarkdownChunker:
         merge_count = 0
         split_count = 0
         for chunk in chunks[1:]:
-            prev_is_def = merged[-1].chunk_role == "definition"
-            curr_is_def = chunk.chunk_role == "definition"
+            prev_is_def = merged[-1].chunk_role in ("definition", "just_for_today")
+            curr_is_def = chunk.chunk_role in ("definition", "just_for_today")
 
             if not prev_is_def and not curr_is_def and \
                self._estimate_tokens(merged[-1].content) < self.min_chunk_tokens:
