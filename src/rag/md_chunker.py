@@ -89,9 +89,9 @@ class MarkdownChunker:
 
     def __init__(
         self,
-        min_chunk_tokens: int = 250,
-        max_chunk_tokens: int = 1200,
-        overlap_ratio: float = 0.15,
+        min_chunk_tokens: int = 25,
+        max_chunk_tokens: int = 130,
+        overlap_ratio: float = 0,
     ):
         self.min_chunk_tokens = min_chunk_tokens
         self.max_chunk_tokens = max_chunk_tokens
