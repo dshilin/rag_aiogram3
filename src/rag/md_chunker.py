@@ -19,6 +19,8 @@ from pathlib import Path
 from typing import Optional
 
 from loguru import logger
+from src.rag.concepts import NA_CONCEPTS
+from src.utils.text import _extract_keywords
 
 
 @dataclass
@@ -89,15 +91,39 @@ class MarkdownChunker:
 
     def __init__(
         self,
-        min_paragraph_length: int = 10,
-        cross_page_merge: bool = True,
-        merge_short_paragraphs: bool = True,
-        merge_threshold: int = 50,
+        min_chunk_tokens: int = 250,
+        max_chunk_tokens: int = 1200,
+        overlap_ratio: float = 0.15,
     ):
-        self.min_paragraph_length = min_paragraph_length
-        self.cross_page_merge = cross_page_merge
-        self.merge_short_paragraphs = merge_short_paragraphs
-        self.merge_threshold = merge_threshold
+        self.min_chunk_tokens = min_chunk_tokens
+        self.max_chunk_tokens = max_chunk_tokens
+        self.overlap_ratio = overlap_ratio
+
+    @staticmethod
+    def _detect_heading(text: str) -> tuple[str, str] | None:
+        stripped = text.strip()
+        for prefix, level in [("# ", "chapter"), ("## ", "section")]:
+            if stripped.startswith(prefix):
+                value = stripped[len(prefix):].strip()
+                return (level, value)
+        return None
+
+    @staticmethod
+    def _classify_heading(chapter: str | None) -> tuple[str, int | None]:
+        if not chapter:
+            return ("main_text", None)
+        chapter_lower = chapter.lower()
+        if "шаг" in chapter_lower:
+            for w in chapter_lower.split():
+                if w.isdigit():
+                    return ("step", int(w))
+            return ("step", None)
+        if "традици" in chapter_lower:
+            for w in chapter_lower.split():
+                if w.isdigit():
+                    return ("tradition", int(w))
+            return ("tradition", None)
+        return ("main_text", None)
 
     def extract_pages_from_md(self, md_path: Path) -> list[tuple[int, str]]:
         content = md_path.read_text(encoding="utf-8")

@@ -5,6 +5,41 @@ import pytest
 from src.rag.md_chunker import MarkdownChunker
 
 
+class TestHeadingDetection:
+    def test_detect_h1_as_chapter(self):
+        chunker = MarkdownChunker()
+        result = chunker._detect_heading("# Шаг Первый")
+        assert result == ("chapter", "Шаг Первый")
+
+    def test_detect_h2_as_section(self):
+        chunker = MarkdownChunker()
+        result = chunker._detect_heading("## Бессилие")
+        assert result == ("section", "Бессилие")
+
+    def test_plain_text_not_heading(self):
+        chunker = MarkdownChunker()
+        assert chunker._detect_heading("Обычный текст") is None
+
+    def test_classify_step_by_number(self):
+        chunker = MarkdownChunker()
+        assert chunker._classify_heading("Шаг 1") == ("step", 1)
+
+    def test_classify_step_by_name(self):
+        chunker = MarkdownChunker()
+        assert chunker._classify_heading("Шаг Первый") == ("step", None)
+
+    def test_classify_tradition(self):
+        chunker = MarkdownChunker()
+        assert chunker._classify_heading("Традиция 12") == ("tradition", 12)
+
+    def test_classify_main_text(self):
+        chunker = MarkdownChunker()
+        assert chunker._classify_heading("Введение") == ("main_text", None)
+
+
+
+
+
 class TestSplitIntoParagraphs:
     def test_short_text_returns_empty(self):
         chunker = MarkdownChunker(min_paragraph_length=10)
