@@ -1,58 +1,13 @@
 import hashlib
 import re
-from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
 from docx import Document as DocxDocument
 
-_RUSSIAN_STOPWORDS = {
-    "и", "в", "во", "не", "что", "он", "на", "я", "с", "со", "как", "а", "то",
-    "все", "она", "так", "его", "но", "да", "ты", "к", "у", "же", "вы", "за",
-    "бы", "по", "из", "им", "от", "о", "для", "или", "еще", "до", "это", "об",
-    "ни", "их", "чем", "при", "был", "когда", "кто", "меня", "нет", "вот",
-    "теперь", "если", "уже", "будет", "даже", "потом", "чтобы", "себя", "них",
-    "него", "нее", "там", "тому", "ли", "ну", "всё", "все", "очень",
-    "разве", "ведь", "опять", "другой", "пока", "над", "под", "без",
-}
-
-
-# ponytail: natasha model loads ~100MB, ~5s cold start.
-# Replace with lightweight keyword extraction if index rebuild speed matters.
-def _get_morph_pipeline():
-    if not hasattr(_get_morph_pipeline, "_cache"):
-        from natasha import MorphVocab, NewsEmbedding, NewsMorphTagger, Segmenter
-        emb = NewsEmbedding()
-        _get_morph_pipeline._cache = {
-            "segmenter": Segmenter(),
-            "morph_tagger": NewsMorphTagger(emb),
-            "morph_vocab": MorphVocab(),
-        }
-    return _get_morph_pipeline._cache
-
-
-# ponytail: only NOUN/PROPN, misses adjective-as-noun and multiword concepts (e.g. "Высшая Сила" handled by na_concepts instead).
-def _extract_keywords(text: str, top_n: int = 5) -> list[str]:
-    pipeline = _get_morph_pipeline()
-    from natasha import Doc
-
-    doc = Doc(text.lower())
-    doc.segment(pipeline["segmenter"])
-    doc.tag_morph(pipeline["morph_tagger"])
-
-    lemmas = []
-    for token in doc.tokens:
-        if token.pos not in ("NOUN", "PROPN"):
-            continue
-        token.lemmatize(pipeline["morph_vocab"])
-        lemma = token.lemma
-        if len(lemma) <= 2 or lemma in _RUSSIAN_STOPWORDS or lemma.isdigit():
-            continue
-        lemmas.append(lemma)
-
-    top = Counter(lemmas).most_common(top_n)
-    return [w for w, _ in top]
+from src.utils.text import _extract_keywords
+from src.rag.concepts import NA_CONCEPTS
 
 
 @dataclass
@@ -73,13 +28,7 @@ class DocxParser:
         self.min_chunk_tokens = min_chunk_tokens
         self.max_chunk_tokens = max_chunk_tokens
         self.overlap_ratio = overlap_ratio
-        self.na_concepts_map = {
-            "капитуляция", "смирение", "Высшая Сила", "групповое сознание",
-            "духовное пробуждение", "спонсорство", "только сегодня", "бессилие",
-            "неуправляемость", "честность", "открытость", "готовность",
-            "единство", "служение", "терапевтическая ценность", "выздоровление",
-            "духовность", "принципы", "традиции", "шаги",
-        }
+        self.na_concepts_map = NA_CONCEPTS
 
     def parse(self, path: Path) -> list[DocxChunk]:
         doc = DocxDocument(str(path))
