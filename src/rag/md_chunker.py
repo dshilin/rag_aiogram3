@@ -18,6 +18,7 @@ from typing import Optional
 from loguru import logger
 from src.rag.concepts import NA_CONCEPTS
 from src.utils.text import _extract_keywords
+from src.utils.logging import setup_logging
 
 
 @dataclass
@@ -202,6 +203,7 @@ class MarkdownChunker:
         try:
             text = md_path.read_text(encoding="utf-8")
             paragraphs = self.split_into_paragraphs(text)
+            logger.debug(f"  Разбито на {len(paragraphs)} абзацев")
             stats.total_pages = 1
 
             current_definition_id: str | None = None
@@ -210,14 +212,17 @@ class MarkdownChunker:
                 heading = self._detect_heading(para)
                 if heading:
                     level, value = heading
+                    logger.debug(f"  Заголовок [{level}]: {value}")
                     if level == "chapter":
                         hierarchy["chapter"] = value
                         hierarchy["section"] = None
                         hierarchy["element_type"], hierarchy["element_number"] = \
                             self._classify_heading(value)
+                        logger.debug(f"  Иерархия: chapter={value}, type={hierarchy['element_type']}")
                         current_definition_id = None
                     elif level == "section":
                         hierarchy["section"] = value
+                        logger.debug(f"  Иерархия: section={value}")
                     continue
 
                 if self._is_definition(para):
@@ -225,6 +230,7 @@ class MarkdownChunker:
                         (para[:100]).encode("utf-8")
                     ).hexdigest()[:16]
                     current_definition_id = chunk_id
+                    logger.debug(f"  Определение: id={chunk_id}")
                     chunk = Chunk(
                         content=para,
                         source=source_name,
@@ -282,6 +288,8 @@ class MarkdownChunker:
             return chunks
 
         merged = [chunks[0]]
+        merge_count = 0
+        split_count = 0
         for chunk in chunks[1:]:
             prev_is_def = merged[-1].chunk_role == "definition"
             curr_is_def = chunk.chunk_role == "definition"
@@ -289,15 +297,22 @@ class MarkdownChunker:
             if not prev_is_def and not curr_is_def and \
                self._estimate_tokens(merged[-1].content) < self.min_chunk_tokens:
                 merged[-1].content += " " + chunk.content
+                merge_count += 1
                 continue
 
             if not curr_is_def and \
                self._estimate_tokens(chunk.content) > self.max_chunk_tokens:
                 split = self._split_chunk(chunk)
                 merged.extend(split)
+                split_count += 1
                 continue
 
             merged.append(chunk)
+
+        if merge_count:
+            logger.debug(f"  Склеено чанков: {merge_count}")
+        if split_count:
+            logger.debug(f"  Разрезано чанков: {split_count}")
 
         return merged
 
@@ -474,14 +489,6 @@ class MarkdownChunker:
 def main():
     """CLI для разбиения Markdown документов на чанки"""
     import argparse
-
-    def setup_logging():
-        logger.remove()
-        logger.add(
-            sys.stdout,
-            format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>",
-            level="INFO",
-        )
 
     setup_logging()
 
