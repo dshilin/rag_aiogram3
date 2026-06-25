@@ -299,6 +299,8 @@ class MarkdownChunker:
             if not prev_is_def and not curr_is_def and \
                self._estimate_tokens(merged[-1].content) < self.min_chunk_tokens:
                 merged[-1].content += " " + chunk.content
+                merged[-1].keywords = list(dict.fromkeys(merged[-1].keywords + chunk.keywords))
+                merged[-1].na_concepts = list(dict.fromkeys(merged[-1].na_concepts + chunk.na_concepts))
                 merge_count += 1
                 continue
 
