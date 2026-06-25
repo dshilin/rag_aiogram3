@@ -109,6 +109,15 @@ class MarkdownChunker:
         return None
 
     @staticmethod
+    def _is_definition(text: str) -> bool:
+        stripped = text.rstrip(".!?,")
+        return text.startswith("«") and stripped.endswith("»")
+
+    @staticmethod
+    def _detect_na_concepts(text: str) -> list[str]:
+        return [c for c in NA_CONCEPTS if c.lower() in text.lower()]
+
+    @staticmethod
     def _classify_heading(chapter: str | None) -> tuple[str, int | None]:
         if not chapter:
             return ("main_text", None)

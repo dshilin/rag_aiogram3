@@ -40,6 +40,33 @@ class TestHeadingDetection:
 
 
 
+class TestDefinitionDetection:
+    def test_definition_in_quotes(self):
+        chunker = MarkdownChunker()
+        assert chunker._is_definition("«Мы признали, что бессильны.»")
+
+    def test_plain_text_not_definition(self):
+        chunker = MarkdownChunker()
+        assert not chunker._is_definition("Обычный текст.")
+
+    def test_no_end_quote_not_definition(self):
+        chunker = MarkdownChunker()
+        assert not chunker._is_definition("«Мы признали, что бессильны.")
+
+
+class TestNAConcepts:
+    def test_detect_matching_concepts(self):
+        chunker = MarkdownChunker()
+        result = chunker._detect_na_concepts("Капитуляция и смирение — это принципы выздоровления.")
+        assert "капитуляция" in result
+        assert "смирение" in result
+        assert "принципы" in result
+
+    def test_no_concepts_in_plain_text(self):
+        chunker = MarkdownChunker()
+        assert chunker._detect_na_concepts("Обычный текст.") == []
+
+
 class TestSplitIntoParagraphs:
     def test_short_text_returns_empty(self):
         chunker = MarkdownChunker(min_paragraph_length=10)
