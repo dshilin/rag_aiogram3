@@ -1,13 +1,10 @@
 """
-Скрипт разбиения Markdown документов на чанки по абзацам
+Разбиение Markdown документов на чанки с метаданными:
 
-Разбивает MD файлы на чанки по абзацам, сохраняя:
-- Источник (имя файла)
-- Номер страницы (из маркеров <!-- Page X -->)
-- Уникальный ID чанка
-
-Стратегия для абзацев, переходящих на следующую страницу:
-- Абзац целиком относится к странице, где он НАЧИНАЕТСЯ
+- Иерархия заголовков (# H1 → chapter, ## H2 → section)
+- Определения (текст в «»)
+- NA-концепты, ключевые слова
+- Склейка коротких/резка длинных чанков по токенам
 """
 
 import hashlib
@@ -416,11 +413,7 @@ class MarkdownChunker:
                 chunks, stats = self.chunk_md(file_path)
                 all_chunks.extend(chunks)
 
-                total_stats.total_pages += stats.total_pages
-                total_stats.total_paragraphs += stats.total_paragraphs
                 total_stats.total_chunks += stats.total_chunks
-                total_stats.empty_pages += stats.empty_pages
-                total_stats.cross_page_paragraphs += stats.cross_page_paragraphs
                 total_stats.files_processed += 1
                 total_stats.errors.extend(stats.errors)
 
@@ -457,12 +450,12 @@ class MarkdownChunker:
         index_data = {
             "total_chunks": len(chunks),
             "source": chunks[0].source if chunks else "unknown",
-            "pages": sorted(list(set(c.page for c in chunks))),
             "chunks": [
                 {
                     "file": f"chunk_{i:04d}.json",
-                    "page": chunk.page,
                     "chunk_id": chunk.chunk_id,
+                    "chunk_role": chunk.chunk_role,
+                    "chapter": chunk.chapter,
                     "preview": chunk.content[:100] + "..." if len(chunk.content) > 100 else chunk.content,
                 }
                 for i, chunk in enumerate(chunks)
@@ -547,8 +540,6 @@ def main():
     logger.info("=" * 60)
     logger.info("Статистика:")
     logger.info(f"  Файлов обработано: {stats.files_processed}")
-    logger.info(f"  Всего страниц: {stats.total_pages}")
-    logger.info(f"  Всего абзацев: {stats.total_paragraphs}")
     logger.info(f"  Чанков создано: {stats.total_chunks}")
     
     if stats.errors:
@@ -562,7 +553,7 @@ def main():
             logger.info(f"\n[Чанк {i+1}]")
             logger.info(f"  ID: {chunk.chunk_id}")
             logger.info(f"  Источник: {chunk.source}")
-            logger.info(f"  Страница: {chunk.page}")
+            logger.info(f"  Роль: {chunk.chunk_role}")
             logger.info(f"  Длина: {len(chunk.content)} симв.")
             logger.info(f"  Текст: {chunk.content[:200]}...")
 
