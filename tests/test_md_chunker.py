@@ -175,6 +175,31 @@ class TestChunkMd:
         assert "капитуляция" in chunks[0].na_concepts
         assert "смирение" in chunks[0].na_concepts
 
+    def test_citation_label_format(self, tmp_path):
+        md_file = tmp_path / "test.md"
+        md_file.write_text(
+            "# Шаг Первый\n\n"
+            "## Бессилие\n\n"
+            "Текст раздела.",
+            encoding="utf-8",
+        )
+        chunker = MarkdownChunker()
+        chunks, stats = chunker.chunk_md(md_file)
+        assert "Глава" in chunks[0].citation_label
+        assert "Шаг Первый" in chunks[0].citation_label
+        assert "Бессилие" in chunks[0].citation_label
+
+    def test_citation_label_chapter_only(self, tmp_path):
+        md_file = tmp_path / "test.md"
+        md_file.write_text(
+            "# Введение\n\n"
+            "Текст главы.",
+            encoding="utf-8",
+        )
+        chunker = MarkdownChunker()
+        chunks, stats = chunker.chunk_md(md_file)
+        assert chunks[0].citation_label == "Глава «Введение»"
+
     def test_to_dict_includes_all_metadata(self, tmp_path):
         md_file = tmp_path / "test.md"
         md_file.write_text("# Шаг Первый\n\nТекст.", encoding="utf-8")

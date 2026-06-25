@@ -243,6 +243,7 @@ class MarkdownChunker:
                         element_number=hierarchy["element_number"],
                         chunk_role="definition",
                         definition_ref_id=chunk_id,
+                        citation_label=self._build_citation_label(hierarchy),
                         na_concepts=self._detect_na_concepts(para),
                         keywords=_extract_keywords(para),
                         paragraph_index=global_paragraph_index,
@@ -262,6 +263,7 @@ class MarkdownChunker:
                     element_number=hierarchy["element_number"],
                     chunk_role="body",
                     definition_ref_id=current_definition_id,
+                    citation_label=self._build_citation_label(hierarchy),
                     na_concepts=self._detect_na_concepts(para),
                     keywords=_extract_keywords(para),
                     paragraph_index=global_paragraph_index,
@@ -381,6 +383,19 @@ class MarkdownChunker:
             parts.append(new_chunk)
 
         return parts
+
+    @staticmethod
+    def _build_citation_label(hierarchy: dict) -> str:
+        parts = []
+        if hierarchy.get("chapter"):
+            parts.append(f"Глава «{hierarchy['chapter']}»")
+        if hierarchy.get("section"):
+            sec = hierarchy["section"]
+            if any(sec.lower().startswith(p) for p in ("шаг", "глава", "традици", "книга")):
+                parts.append(sec)
+            else:
+                parts.append(f"Раздел «{sec}»")
+        return ", ".join(parts) if parts else hierarchy.get("book_title", "")
 
     @staticmethod
     def _estimate_tokens(text: str) -> int:
