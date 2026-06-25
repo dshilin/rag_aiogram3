@@ -23,41 +23,51 @@ from loguru import logger
 
 @dataclass
 class Chunk:
-    """Чанк текста с метаданными"""
     content: str
     source: str
-    page: int
     chunk_id: str = ""
+    book_title: str = ""
+    part: str | None = None
+    chapter: str | None = None
+    section: str | None = None
+    element_type: str = "main_text"
+    element_number: int | None = None
+    chunk_role: str = "body"
+    definition_ref_id: str | None = None
+    citation_label: str = "TBD"
+    na_concepts: list = field(default_factory=list)
+    keywords: list = field(default_factory=list)
     paragraph_index: int = 0
+    page: int = 0
 
     def __post_init__(self):
         if not self.chunk_id:
             self.chunk_id = self._generate_id()
 
     def _generate_id(self) -> str:
-        """Генерация уникального ID на основе контента и метаданных"""
-        unique_str = f"{self.source}:{self.page}:{self.paragraph_index}:{self.content[:50]}"
+        unique_str = f"{self.source}:{self.paragraph_index}:{self.content[:50]}"
         return hashlib.md5(unique_str.encode("utf-8")).hexdigest()[:16]
 
     def to_dict(self) -> dict:
-        """Конвертировать в словарь для сохранения"""
         return {
             "content": self.content,
             "metadata": {
-                "source": self.source,
-                "page": self.page,
                 "chunk_id": self.chunk_id,
+                "source": self.source,
+                "book_title": self.book_title,
+                "part": self.part,
+                "chapter": self.chapter,
+                "section": self.section,
+                "element_type": self.element_type,
+                "element_number": self.element_number,
+                "chunk_role": self.chunk_role,
+                "definition_ref_id": self.definition_ref_id,
+                "citation_label": self.citation_label,
+                "na_concepts": self.na_concepts,
+                "keywords": self.keywords,
                 "paragraph_index": self.paragraph_index,
             }
         }
-
-    def format_for_response(self) -> str:
-        """Форматировать для ответа пользователю"""
-        return (
-            f"📄 **Источник**: {self.source}\n"
-            f"📑 **Страница**: {self.page}\n"
-            f"📝 **Текст**:\n{self.content}"
-        )
 
 
 @dataclass
