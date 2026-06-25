@@ -12,15 +12,26 @@ _RUSSIAN_STOPWORDS = {
 
 # ponytail: natasha model loads ~100MB, ~5s cold start.
 # Replace with lightweight keyword extraction if index rebuild speed matters.
-def _extract_keywords(text: str, top_n: int = 5) -> list[str]:
-    from natasha import Doc, MorphVocab, NewsEmbedding, NewsMorphTagger, Segmenter
+_MORPH_CACHE = None
 
-    emb = NewsEmbedding()
-    pipeline = {
-        "segmenter": Segmenter(),
-        "morph_tagger": NewsMorphTagger(emb),
-        "morph_vocab": MorphVocab(),
-    }
+
+def _get_morph_pipeline():
+    global _MORPH_CACHE
+    if _MORPH_CACHE is None:
+        from natasha import MorphVocab, NewsEmbedding, NewsMorphTagger, Segmenter
+        emb = NewsEmbedding()
+        _MORPH_CACHE = {
+            "segmenter": Segmenter(),
+            "morph_tagger": NewsMorphTagger(emb),
+            "morph_vocab": MorphVocab(),
+        }
+    return _MORPH_CACHE
+
+
+def _extract_keywords(text: str, top_n: int = 5) -> list[str]:
+    from natasha import Doc
+
+    pipeline = _get_morph_pipeline()
 
     doc = Doc(text.lower())
     doc.segment(pipeline["segmenter"])
