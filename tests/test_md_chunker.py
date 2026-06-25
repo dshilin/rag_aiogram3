@@ -37,9 +37,6 @@ class TestHeadingDetection:
         assert chunker._classify_heading("Введение") == ("main_text", None)
 
 
-
-
-
 class TestDefinitionDetection:
     def test_definition_in_quotes(self):
         chunker = MarkdownChunker()
@@ -57,7 +54,9 @@ class TestDefinitionDetection:
 class TestNAConcepts:
     def test_detect_matching_concepts(self):
         chunker = MarkdownChunker()
-        result = chunker._detect_na_concepts("Капитуляция и смирение — это принципы выздоровления.")
+        result = chunker._detect_na_concepts(
+            "Капитуляция и смирение — это принципы выздоровления."
+        )
         assert "капитуляция" in result
         assert "смирение" in result
         assert "принципы" in result
@@ -68,19 +67,20 @@ class TestNAConcepts:
 
 
 class TestSplitIntoParagraphs:
-    def test_short_text_returns_empty(self):
-        chunker = MarkdownChunker(min_paragraph_length=10)
-        result = chunker.split_into_paragraphs("short")
-        assert result == []
-
-    def test_entire_block_as_one_paragraph(self):
-        chunker = MarkdownChunker(min_paragraph_length=10)
-        text = "First sentence. Second sentence. Third sentence."
+    def test_simple_paragraphs(self):
+        chunker = MarkdownChunker()
+        text = "Первый параграф.\n\nВторой параграф."
         result = chunker.split_into_paragraphs(text)
-        assert len(result) == 1
-        assert result[0] == "First sentence. Second sentence. Third sentence."
+        assert len(result) == 2
 
-    def test_empty_text_returns_empty(self):
+    def test_heading_not_removed(self):
+        chunker = MarkdownChunker()
+        text = "# Шаг Первый\n\nТекст шага."
+        result = chunker.split_into_paragraphs(text)
+        assert len(result) == 2
+        assert result[0] == "# Шаг Первый"
+
+    def test_empty_text(self):
         chunker = MarkdownChunker()
         assert chunker.split_into_paragraphs("") == []
 
@@ -88,150 +88,116 @@ class TestSplitIntoParagraphs:
         chunker = MarkdownChunker()
         assert chunker.split_into_paragraphs("   \n\n  ") == []
 
-    def test_multiple_blocks_become_multiple_paragraphs(self):
-        chunker = MarkdownChunker(min_paragraph_length=10)
-        text = "First paragraph here.\n\nSecond paragraph here too."
-        result = chunker.split_into_paragraphs(text)
-        assert len(result) == 2
-        assert result[0] == "First paragraph here."
-        assert result[1] == "Second paragraph here too."
+
+class TestEstimateTokens:
+    def test_simple_text(self):
+        assert MarkdownChunker._estimate_tokens("один два три") == 3
 
 
-class TestCrossPageMerge:
-    def test_cross_page_paragraph_merged(self, tmp_path):
+class TestChunkMd:
+    def test_simple_document(self, tmp_path):
         md_file = tmp_path / "test.md"
         md_file.write_text(
-            "<!-- Page 1 -->\n"
-            "This paragraph starts on page 1 and continues\n"
-            "<!-- Page 2 -->\n"
-            "onto page 2 right here.",
+            "# Шаг Первый\n\n"
+            "«Мы признали, что бессильны.»\n\n"
+            "Капитуляция — это ключ к выздоровлению.",
             encoding="utf-8",
         )
-        chunker = MarkdownChunker(cross_page_merge=True, merge_short_paragraphs=False)
+        chunker = MarkdownChunker()
         chunks, stats = chunker.chunk_md(md_file)
-        assert len(chunks) == 1
-        assert "starts on page 1" in chunks[0].content
-        assert "onto page 2" in chunks[0].content
-        assert chunks[0].page == 1
-        assert stats.cross_page_paragraphs == 1
+        assert len(chunks) >= 2
+        assert chunks[0].chunk_role == "definition"
+        assert chunks[1].chunk_role == "body"
 
-    def test_cross_page_merge_disabled(self, tmp_path):
+    def test_hierarchy_propagated(self, tmp_path):
         md_file = tmp_path / "test.md"
         md_file.write_text(
-            "<!-- Page 1 -->\n"
-            "This paragraph starts on page 1\n"
-            "<!-- Page 2 -->\n"
-            "This paragraph is on page 2.",
+            "# Шаг Первый\n\n"
+            "## Бессилие\n\n"
+            "Текст раздела.",
             encoding="utf-8",
         )
-        chunker = MarkdownChunker(cross_page_merge=False, merge_short_paragraphs=False)
+        chunker = MarkdownChunker()
         chunks, stats = chunker.chunk_md(md_file)
-        assert len(chunks) == 2
-        assert stats.cross_page_paragraphs == 0
+        assert chunks[0].chapter == "Шаг Первый"
+        assert chunks[0].section == "Бессилие"
+        assert chunks[0].element_type == "step"
 
-    def test_cross_page_paragraph_ends_with_period(self, tmp_path):
+    def test_definition_ref_id_propagated(self, tmp_path):
         md_file = tmp_path / "test.md"
         md_file.write_text(
-            "<!-- Page 1 -->\n"
-            "This paragraph ends properly on page 1.\n"
-            "<!-- Page 2 -->\n"
-            "New paragraph on page 2.",
+            "# Шаг Первый\n\n"
+            "«Мы признали.»\n\n"
+            "Текст главы.",
             encoding="utf-8",
         )
-        chunker = MarkdownChunker(cross_page_merge=True, merge_short_paragraphs=False)
+        chunker = MarkdownChunker()
         chunks, stats = chunker.chunk_md(md_file)
-        assert len(chunks) == 2
-        assert chunks[0].page == 1
-        assert chunks[1].page == 2
-        assert stats.cross_page_paragraphs == 0
+        def_chunk = [c for c in chunks if c.chunk_role == "definition"][0]
+        body_chunk = [c for c in chunks if c.chunk_role == "body"][0]
+        assert body_chunk.definition_ref_id == def_chunk.chunk_id
 
-    def test_cross_page_paragraph_flush_at_end(self, tmp_path):
+    def test_short_body_chunks_merged(self, tmp_path):
         md_file = tmp_path / "test.md"
         md_file.write_text(
-            "<!-- Page 1 -->\n"
-            "Paragraph that does not end with punctuation",
+            "# Шаг\n\n"
+            "«Мы признали.»\n\n"
+            "Короткий текст.\n\n"
+            "Еще короткий.\n\n"
+            "Третий короткий.",
             encoding="utf-8",
         )
-        chunker = MarkdownChunker(cross_page_merge=True, merge_short_paragraphs=False)
+        chunker = MarkdownChunker()
         chunks, stats = chunker.chunk_md(md_file)
-        assert len(chunks) == 1
-        assert "Paragraph that does not end with punctuation" in chunks[0].content
-        assert chunks[0].page == 1
+        body_chunks = [c for c in chunks if c.chunk_role == "body"]
+        assert len(body_chunks) < 3
 
-
-class TestMergeShortParagraphs:
-    def test_short_paragraph_merged(self, tmp_path):
+    def test_long_body_chunk_split(self, tmp_path):
+        long_text = "Предложение. " * 2000
         md_file = tmp_path / "test.md"
         md_file.write_text(
-            "<!-- Page 1 -->\n"
-            "This is a long first paragraph that goes on and on.\n"
-            "\n"
-            "Short para.",
+            "# Шаг\n\n" "«Мы признали.»\n\n" + long_text,
             encoding="utf-8",
         )
-        chunker = MarkdownChunker(
-            merge_short_paragraphs=True, merge_threshold=50, cross_page_merge=False
-        )
+        chunker = MarkdownChunker()
         chunks, stats = chunker.chunk_md(md_file)
-        assert len(chunks) == 1
-        assert "long first paragraph" in chunks[0].content
-        assert "Short para" in chunks[0].content
+        body_chunks = [c for c in chunks if c.chunk_role == "body"]
+        assert len(body_chunks) > 1
 
-    def test_merge_short_paragraphs_disabled(self, tmp_path):
+    def test_na_concepts_detected_in_chunk(self, tmp_path):
         md_file = tmp_path / "test.md"
         md_file.write_text(
-            "<!-- Page 1 -->\n"
-            "This is a long first paragraph that goes on and on.\n"
-            "\n"
-            "Short para.",
+            "# Шаг\n\n" "Капитуляция смирение выздоровление.",
             encoding="utf-8",
         )
-        chunker = MarkdownChunker(
-            merge_short_paragraphs=False, merge_threshold=50, cross_page_merge=False
-        )
+        chunker = MarkdownChunker()
         chunks, stats = chunker.chunk_md(md_file)
-        assert len(chunks) == 2
-        assert "long first paragraph" in chunks[0].content
-        assert "Short para" in chunks[1].content
+        assert "капитуляция" in chunks[0].na_concepts
+        assert "смирение" in chunks[0].na_concepts
 
-    def test_long_paragraph_not_merged(self, tmp_path):
+    def test_to_dict_includes_all_metadata(self, tmp_path):
         md_file = tmp_path / "test.md"
-        md_file.write_text(
-            "<!-- Page 1 -->\n"
-            "First paragraph content here.\n"
-            "\n"
-            "Second paragraph is long enough not to be merged.\n"
-            "Far longer than the threshold indeed.",
-            encoding="utf-8",
-        )
-        chunker = MarkdownChunker(
-            merge_short_paragraphs=True, merge_threshold=50, cross_page_merge=False
-        )
+        md_file.write_text("# Шаг Первый\n\nТекст.", encoding="utf-8")
+        chunker = MarkdownChunker()
         chunks, stats = chunker.chunk_md(md_file)
-        assert len(chunks) == 2
+        d = chunks[0].to_dict()
+        assert "chunk_id" in d["metadata"]
+        assert "book_title" in d["metadata"]
+        assert "chapter" in d["metadata"]
+        assert "element_type" in d["metadata"]
+        assert "chunk_role" in d["metadata"]
+        assert "na_concepts" in d["metadata"]
 
 
 class TestSaveChunks:
-    def test_save_chunks_with_metadata(self, tmp_path):
+    def test_save_and_load(self, tmp_path):
         md_file = tmp_path / "test.md"
         md_file.write_text(
-            "<!-- Page 1 -->\n"
-            "This is the first paragraph.\n"
-            "\n"
-            "<!-- Page 2 -->\n"
-            "This paragraph continues\n"
-            "<!-- Page 3 -->\n"
-            "to page 3 here.\n"
-            "\n"
-            "Short.",
+            "# Шаг Первый\n\n" "«Мы признали.»\n\n" "Текст.",
             encoding="utf-8",
         )
         out_dir = tmp_path / "chunks"
-        chunker = MarkdownChunker(
-            cross_page_merge=True,
-            merge_short_paragraphs=True,
-            merge_threshold=50,
-        )
+        chunker = MarkdownChunker()
         chunks, stats = chunker.chunk_md(md_file)
         chunker.save_chunks(chunks, out_dir)
 
@@ -239,14 +205,16 @@ class TestSaveChunks:
         assert (out_dir / "chunk_0000.json").exists()
 
         import json
+
         idx = json.loads((out_dir / "index.json").read_text(encoding="utf-8"))
         assert idx["total_chunks"] == len(chunks)
         assert idx["source"] == "test"
 
-        chunk0 = json.loads((out_dir / "chunk_0000.json").read_text(encoding="utf-8"))
+        chunk0 = json.loads(
+            (out_dir / "chunk_0000.json").read_text(encoding="utf-8")
+        )
         assert chunk0["metadata"]["source"] == "test"
-        assert chunk0["metadata"]["page"] == 1
-        assert stats.cross_page_paragraphs == 1
+        assert chunk0["metadata"]["chunk_role"] == "definition"
 
 
 if __name__ == "__main__":
