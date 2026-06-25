@@ -165,7 +165,6 @@ class MarkdownChunker:
         if not text.strip():
             return []
 
-        text = re.sub(r'<!--\s*Page\s+\d+\s*-->', '', text)
         paragraphs = []
         raw_blocks = re.split(r'\n\n+', text)
 
@@ -175,19 +174,13 @@ class MarkdownChunker:
                 line = line.strip()
                 if not line:
                     continue
-                if line.startswith('<!--') and line.endswith('-->'):
-                    continue
-                if re.match(r'^\*\[\d+\s+изображений?\s+на\s+странице\s+\d+\]\*$', line):
-                    continue
-                if re.match(r'^.*\.{3,}\d+$', line):
-                    continue
                 lines.append(line)
 
             if not lines:
                 continue
 
             block_text = ' '.join(lines)
-            if len(block_text) >= self.min_paragraph_length:
+            if block_text.strip():
                 paragraphs.append(block_text)
 
         return paragraphs
@@ -198,81 +191,87 @@ class MarkdownChunker:
         source_name = md_path.stem
         global_paragraph_index = 0
 
+        hierarchy = {
+            "book_title": source_name,
+            "part": None,
+            "chapter": None,
+            "section": None,
+            "element_type": "main_text",
+            "element_number": None,
+        }
+
         logger.info(f"Обработка файла: {md_path.name}")
 
         try:
-            pages_text = self.extract_pages_from_md(md_path)
-            stats.total_pages = len(pages_text)
+            text = md_path.read_text(encoding="utf-8")
+            paragraphs = self.split_into_paragraphs(text)
+            stats.total_pages = 1
 
-            continued_paragraph: tuple[int, str] | None = None
+            current_definition_id: str | None = None
 
-            for page_num, page_text in pages_text:
-                if not page_text.strip():
-                    stats.empty_pages += 1
+            for para in paragraphs:
+                heading = self._detect_heading(para)
+                if heading:
+                    level, value = heading
+                    if level == "chapter":
+                        hierarchy["chapter"] = value
+                        hierarchy["section"] = None
+                        hierarchy["element_type"], hierarchy["element_number"] = \
+                            self._classify_heading(value)
+                        current_definition_id = None
+                    elif level == "section":
+                        hierarchy["section"] = value
                     continue
 
-                paragraphs = self.split_into_paragraphs(page_text)
-
-                if not paragraphs:
-                    stats.empty_pages += 1
-                    continue
-
-                if self.cross_page_merge and continued_paragraph is not None:
-                    prev_page, prev_text = continued_paragraph
-                    paragraphs[0] = prev_text + " " + paragraphs[0]
-                    stats.cross_page_paragraphs += 1
-                    continued_paragraph = None
-                    chunk_page = prev_page
-                else:
-                    chunk_page = page_num
-
-                if self.cross_page_merge and not any(paragraphs[-1].rstrip().endswith(c) for c in ('.', '!', '?', ':', ';', '»', '"')):
-                    continued_paragraph = (chunk_page, paragraphs.pop())
-
-                for para in paragraphs:
+                if self._is_definition(para):
+                    chunk_id = hashlib.md5(
+                        (para[:100]).encode("utf-8")
+                    ).hexdigest()[:16]
+                    current_definition_id = chunk_id
                     chunk = Chunk(
                         content=para,
                         source=source_name,
-                        page=chunk_page,
+                        chunk_id=chunk_id,
+                        book_title=hierarchy["book_title"],
+                        part=hierarchy["part"],
+                        chapter=hierarchy["chapter"],
+                        section=hierarchy["section"],
+                        element_type=hierarchy["element_type"],
+                        element_number=hierarchy["element_number"],
+                        chunk_role="definition",
+                        definition_ref_id=chunk_id,
+                        na_concepts=self._detect_na_concepts(para),
+                        keywords=_extract_keywords(para),
                         paragraph_index=global_paragraph_index,
                     )
                     chunks.append(chunk)
                     global_paragraph_index += 1
-                    stats.total_paragraphs += 1
+                    continue
 
-            if self.cross_page_merge and continued_paragraph is not None:
-                prev_page, prev_text = continued_paragraph
                 chunk = Chunk(
-                    content=prev_text,
+                    content=para,
                     source=source_name,
-                    page=prev_page,
+                    book_title=hierarchy["book_title"],
+                    part=hierarchy["part"],
+                    chapter=hierarchy["chapter"],
+                    section=hierarchy["section"],
+                    element_type=hierarchy["element_type"],
+                    element_number=hierarchy["element_number"],
+                    chunk_role="body",
+                    definition_ref_id=current_definition_id,
+                    na_concepts=self._detect_na_concepts(para),
+                    keywords=_extract_keywords(para),
                     paragraph_index=global_paragraph_index,
                 )
                 chunks.append(chunk)
                 global_paragraph_index += 1
-                stats.total_paragraphs += 1
 
-            if self.merge_short_paragraphs:
-                merged = []
-                for chunk in chunks:
-                    if merged and len(chunk.content) < self.merge_threshold:
-                        merged[-1] = Chunk(
-                            content=merged[-1].content + " " + chunk.content,
-                            source=merged[-1].source,
-                            page=merged[-1].page,
-                            paragraph_index=merged[-1].paragraph_index,
-                        )
-                    else:
-                        merged.append(chunk)
-                chunks = merged
-
+            stats.total_paragraphs = len(chunks)
+            chunks = self._post_process(chunks)
             stats.total_chunks = len(chunks)
             stats.files_processed += 1
 
-            logger.info(
-                f"  ✓ Обработано: {stats.total_pages} стр., "
-                f"{stats.total_paragraphs} абзацев"
-            )
+            logger.info(f"  ✓ Обработано: {stats.total_chunks} чанков")
 
         except Exception as e:
             stats.errors.append(f"{md_path.name}: {str(e)}")
@@ -280,6 +279,100 @@ class MarkdownChunker:
             raise
 
         return chunks, stats
+
+    def _post_process(self, chunks: list[Chunk]) -> list[Chunk]:
+        if not chunks:
+            return chunks
+
+        merged = [chunks[0]]
+        for chunk in chunks[1:]:
+            prev_is_def = merged[-1].chunk_role == "definition"
+            curr_is_def = chunk.chunk_role == "definition"
+
+            if not prev_is_def and not curr_is_def and \
+               self._estimate_tokens(merged[-1].content) < self.min_chunk_tokens:
+                merged[-1].content += " " + chunk.content
+                continue
+
+            if not curr_is_def and \
+               self._estimate_tokens(chunk.content) > self.max_chunk_tokens:
+                split = self._split_chunk(chunk)
+                merged.extend(split)
+                continue
+
+            merged.append(chunk)
+
+        return merged
+
+    def _split_chunk(self, chunk: Chunk) -> list[Chunk]:
+        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', chunk.content) if s.strip()]
+        if len(sentences) < 2:
+            return [chunk]
+
+        parts = []
+        current = []
+        current_tokens = 0
+        overlap_tokens = int(self.max_chunk_tokens * self.overlap_ratio)
+
+        for sent in sentences:
+            sent_tokens = self._estimate_tokens(sent)
+            if current_tokens + sent_tokens > self.max_chunk_tokens and current:
+                text = " ".join(current)
+                new_chunk = Chunk(
+                    content=text,
+                    source=chunk.source,
+                    book_title=chunk.book_title,
+                    part=chunk.part,
+                    chapter=chunk.chapter,
+                    section=chunk.section,
+                    element_type=chunk.element_type,
+                    element_number=chunk.element_number,
+                    chunk_role=chunk.chunk_role,
+                    definition_ref_id=chunk.definition_ref_id,
+                    na_concepts=chunk.na_concepts,
+                    keywords=chunk.keywords,
+                    paragraph_index=chunk.paragraph_index,
+                )
+                parts.append(new_chunk)
+
+                overlap = []
+                overlap_tok = 0
+                for s in reversed(current):
+                    t = self._estimate_tokens(s)
+                    if overlap_tok + t > overlap_tokens:
+                        break
+                    overlap.insert(0, s)
+                    overlap_tok += t
+                current = overlap
+                current_tokens = overlap_tok
+
+            current.append(sent)
+            current_tokens += sent_tokens
+
+        if current:
+            text = " ".join(current)
+            new_chunk = Chunk(
+                content=text,
+                source=chunk.source,
+                book_title=chunk.book_title,
+                part=chunk.part,
+                chapter=chunk.chapter,
+                section=chunk.section,
+                element_type=chunk.element_type,
+                element_number=chunk.element_number,
+                chunk_role=chunk.chunk_role,
+                definition_ref_id=chunk.definition_ref_id,
+                na_concepts=chunk.na_concepts,
+                keywords=chunk.keywords,
+                paragraph_index=chunk.paragraph_index,
+            )
+            parts.append(new_chunk)
+
+        return parts
+
+    @staticmethod
+    def _estimate_tokens(text: str) -> int:
+        return int(len(text.split()) * 1.3)
 
     def chunk_directory(
         self,
