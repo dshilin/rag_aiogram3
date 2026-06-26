@@ -40,6 +40,8 @@ class ChunkResult:
         idx = cleaned.find("> «")
         if idx != -1:
             cleaned = cleaned[:idx].rstrip(" ,>»")
+        if self.source.lower() in cleaned.lower():
+            return cleaned
         return f"{self.source}, {cleaned}" if cleaned else self.source
 
     def to_dict(self) -> dict:
