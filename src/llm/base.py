@@ -84,6 +84,7 @@ class LLMClient(ABC):
         context: Optional[str] = None,
         sources: Optional[List[str]] = None,
         conversation_history: Optional[List[dict]] = None,
+        system_prompt: Optional[str] = None,
     ) -> str:
         """
         Отправить запрос к LLM
@@ -93,11 +94,15 @@ class LLMClient(ABC):
             context: Контекст из RAG (опционально)
             sources: Источники из RAG для цитирования (опционально)
             conversation_history: История диалога для поддержания контекста (опционально)
+            system_prompt: Системный промт (по умолчанию используется self.system_prompt)
 
         Returns:
             Текст ответа от модели или сообщение об ошибке
         """
         pass
+
+    def _get_system_prompt(self, override: Optional[str] = None) -> str:
+        return override if override is not None else self.system_prompt
 
     def _build_prompt(
         self,

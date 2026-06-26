@@ -63,6 +63,7 @@ class OpenAIClient(LLMClient):
         context: Optional[str] = None,
         sources: Optional[List[str]] = None,
         conversation_history: Optional[List[dict]] = None,
+        system_prompt: Optional[str] = None,
     ) -> str:
         """
         Отправить запрос к OpenAI
@@ -89,8 +90,7 @@ class OpenAIClient(LLMClient):
                 f"temperature={self.temperature}, max_tokens={self.max_tokens}"
             )
 
-            # Формируем сообщения для API
-            messages = [{"role": "system", "content": self.system_prompt}]
+            messages = [{"role": "system", "content": self._get_system_prompt(system_prompt)}]
             
             # Добавляем историю диалога, если есть
             if conversation_history:

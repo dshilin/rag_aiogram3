@@ -77,6 +77,7 @@ class YandexGPTClient(LLMClient):
         context: Optional[str] = None,
         sources: Optional[list[str]] = None,
         conversation_history: Optional[List[dict]] = None,
+        system_prompt: Optional[str] = None,
     ) -> str:
         """
         Отправить запрос к YandexGPT
@@ -115,8 +116,7 @@ class YandexGPTClient(LLMClient):
         # Формируем сообщения для API
         messages = []
         
-        # Добавляем системный промт
-        messages.append({"role": "system", "text": self.system_prompt})
+        messages.append({"role": "system", "text": self._get_system_prompt(system_prompt)})
         
         # Добавляем историю диалога, если есть
         if conversation_history:

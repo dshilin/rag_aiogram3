@@ -24,6 +24,8 @@ class QueryCategory(str, Enum):
     AN_QUESTION = "an_question"
 
 
+CLASSIFIER_SYSTEM_PROMPT = "Ты — классификатор запросов. Отвечай ТОЛЬКО названием категории, без пояснений."
+
 CLASSIFIER_PROMPT = """Классифицируй запрос пользователя в одну из категорий:
 - greeting: приветствие (привет, здравствуй, добрый день, и т.д.)
 - help_request: просьба о помощи (помогите, нужна помощь, как бросить, и т.д.)
@@ -71,6 +73,7 @@ class QueryClassifier:
                 context=None,
                 sources=None,
                 conversation_history=None,
+                system_prompt=CLASSIFIER_SYSTEM_PROMPT,
             )
 
             # Ищем первую категорию в ответе LLM

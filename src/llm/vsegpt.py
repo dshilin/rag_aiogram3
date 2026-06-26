@@ -46,9 +46,10 @@ class VseGPTClient(LLMClient):
     def ask(
         self,
         question: str,
-        context: Optional[str] = None,
+        context: Optional[list[str]] = None,
         sources: Optional[list[str]] = None,
         conversation_history: Optional[List[dict]] = None,
+        system_prompt: Optional[str] = None,
     ) -> str:
         """
         Отправить запрос к VseGPT.ru
@@ -76,8 +77,7 @@ class VseGPTClient(LLMClient):
             "Content-Type": "application/json",
         }
 
-        # Формируем сообщения для API
-        messages = [{"role": "system", "content": self.system_prompt}]
+        messages = [{"role": "system", "content": self._get_system_prompt(system_prompt)}]
         
         # Добавляем историю диалога, если есть
         if conversation_history:
