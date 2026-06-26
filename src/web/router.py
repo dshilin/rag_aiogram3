@@ -116,7 +116,7 @@ async def chat(req: ChatRequest):
             if results:
                 context_parts = []
                 for chunk in results:
-                    citation = chunk.metadata.get("citation_label", chunk.source) if chunk.metadata else chunk.source
+                    citation = chunk.citation_label
                     context_parts.append(
                         f"[Источник: {citation}]\n{chunk.content}"
                     )

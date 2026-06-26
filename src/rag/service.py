@@ -1,4 +1,5 @@
 import json
+import re
 import shutil
 from dataclasses import dataclass
 from datetime import datetime
@@ -28,6 +29,18 @@ class ChunkResult:
     chunk_id: str
     score: float = 0.0
     metadata: dict = None
+
+    @property
+    def citation_label(self) -> str:
+        meta_label = (self.metadata or {}).get("citation_label")
+        if not meta_label or meta_label == "TBD":
+            return self.source
+        cleaned = re.sub(r'\s*#+\s*', ' ', meta_label).strip()
+        # ponytail: strip trailing chunk text after `> «` — that's the body, not the heading
+        idx = cleaned.find("> «")
+        if idx != -1:
+            cleaned = cleaned[:idx].rstrip(" ,>»")
+        return f"{self.source}, {cleaned}" if cleaned else self.source
 
     def to_dict(self) -> dict:
         """Конвертировать в словарь"""

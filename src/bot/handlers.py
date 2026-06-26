@@ -207,7 +207,7 @@ async def handle_text(message: Message):
                 sources = []
 
                 for chunk in results:
-                    label = chunk.metadata.get("citation_label", chunk.source) if chunk.metadata else chunk.source
+                    label = chunk.citation_label
                     context_parts.append(
                         f"[Источник: {label}]\n{chunk.content}"
                     )
