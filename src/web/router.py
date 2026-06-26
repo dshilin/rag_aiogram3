@@ -84,7 +84,7 @@ async def chat(req: ChatRequest):
 
             if category == QueryCategory.GREETING:
                 return ChatResponse(
-                    reply="👋 Привет! Я RAG-бот с литературой АН. Задайте вопрос по теме выздоровления.",
+                    reply="👋 Привет! Задайте вопрос по теме выздоровления.",
                     category="greeting",
                 )
 
@@ -111,7 +111,7 @@ async def chat(req: ChatRequest):
         sources = []
 
         if USE_LLM and llm_client:
-            results = get_rag_service().query_with_metadata(query, top_k=5, score_threshold=0.3)
+            results = get_rag_service().query_with_metadata(query, top_k=5)
 
             if results:
                 context_parts = []
