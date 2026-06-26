@@ -194,7 +194,7 @@ class RAGService:
         self,
         question: str,
         top_k: Optional[int] = None,
-        score_threshold: float = 0.0,
+        score_threshold: float = 2.0,
         metadata_filter: Optional[dict] = None,
         expand_definitions: bool = True,
     ) -> list[ChunkResult]:
@@ -213,7 +213,7 @@ class RAGService:
             if metadata_filter:
                 if not all(meta.get(k) == v for k, v in metadata_filter.items()):
                     continue
-            if score < score_threshold:
+            if score > score_threshold:
                 continue
             chunk_results.append(
                 ChunkResult(
