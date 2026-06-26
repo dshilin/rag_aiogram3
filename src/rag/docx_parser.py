@@ -33,6 +33,7 @@ class DocxParser:
     def parse(self, path: Path) -> list[DocxChunk]:
         doc = DocxDocument(str(path))
         hierarchy = {"book_title": path.stem, "part": None, "chapter": None, "section": None}
+        book_title_set = False
         definition_id = None
         chunks = []
 
@@ -46,13 +47,23 @@ class DocxParser:
 
             if detected:
                 level, value = detected
-                if level == "part":
+                if level == "book_title":
+                    hierarchy["book_title"] = value
+                    hierarchy["part"] = None
+                    hierarchy["chapter"] = None
+                    hierarchy["section"] = None
+                    book_title_set = True
+                    definition_id = None
+                elif level == "part":
                     hierarchy["part"] = value
                     hierarchy["chapter"] = None
                     hierarchy["section"] = None
                 elif level == "chapter":
                     hierarchy["chapter"] = value
                     hierarchy["section"] = None
+                    if not book_title_set:
+                        hierarchy["book_title"] = value
+                        book_title_set = True
                     definition_id = None
                 elif level == "section":
                     hierarchy["section"] = value
@@ -74,17 +85,17 @@ class DocxParser:
         if text.strip().upper().startswith("КНИГА"):
             return ("part", text)
         if "heading 1" in style_lower or "heading1" in style_lower:
-            return ("chapter", text)
+            return ("book_title", text)
         if "heading 2" in style_lower or "heading2" in style_lower:
-            return ("section", text)
+            return ("part", text)
         if "heading 3" in style_lower or "heading3" in style_lower:
-            return ("section", text)
+            return ("chapter", text)
         if "heading 4" in style_lower or "heading4" in style_lower:
             return ("section", text)
         words = text.split()
         if 1 <= len(words) <= 5 and not text.rstrip().endswith((".", "!", "?", ":", ";", "»")):
             if any(kw in text.lower() for kw in ["шаг", "традици", "книга", "часть"]):
-                return ("section", text)
+                return ("chapter", text)
         return None
 
     def _is_definition(self, text: str) -> bool:

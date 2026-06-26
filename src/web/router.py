@@ -134,13 +134,6 @@ async def chat(req: ChatRequest):
                     conversation_history=session_history,
                 )
 
-                # ponytail: if LLM refuses to answer, suppress sources
-                _refusal_patterns = ("не могу", "не могу обсуждать", "не могу ответить", "не уместно", "не этично")
-                if sources and not any(p in answer.lower() for p in _refusal_patterns):
-                    sources_text = "\n\n📚 **Источники:**\n"
-                    sources_text += "\n".join(f"• {s['source']}" for s in sources)
-                    answer += sources_text
-
                 response = answer
             else:
                 response = (

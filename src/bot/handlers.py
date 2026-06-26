@@ -199,7 +199,7 @@ async def handle_text(message: Message):
     try:
         if USE_LLM and llm_client:
             # Поиск релевантных чанков в RAG
-            results = get_rag_service().query_with_metadata(query, top_k=5, score_threshold=0.3)
+            results = get_rag_service().query_with_metadata(query, top_k=5)
 
             if results:
                 # Формируем контекст из найденных чанков
@@ -207,10 +207,11 @@ async def handle_text(message: Message):
                 sources = []
 
                 for chunk in results:
+                    label = chunk.metadata.get("citation_label", chunk.source) if chunk.metadata else chunk.source
                     context_parts.append(
-                        f"[Источник: {chunk.source}, стр. {chunk.page}]\n{chunk.content}"
+                        f"[Источник: {label}]\n{chunk.content}"
                     )
-                    sources.append(f"{chunk.source} (стр. {chunk.page})")
+                    sources.append(label)
 
                 context = "\n\n---\n\n".join(context_parts)
 
@@ -221,12 +222,6 @@ async def handle_text(message: Message):
                     sources=sources,
                     conversation_history=session_history,
                 )
-
-                # Добавляем источники
-                if sources:
-                    sources_text = "\n\n📚 **Источники:**\n"
-                    sources_text += "\n".join(f"• {src}" for src in sources)
-                    answer += sources_text
 
                 response = answer
             else:

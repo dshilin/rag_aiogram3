@@ -366,6 +366,7 @@ class MarkdownChunker:
                     element_number=chunk.element_number,
                     chunk_role=chunk.chunk_role,
                     definition_ref_id=chunk.definition_ref_id,
+                    citation_label=chunk.citation_label,
                     na_concepts=chunk.na_concepts,
                     keywords=chunk.keywords,
                     paragraph_index=chunk.paragraph_index,
@@ -399,6 +400,7 @@ class MarkdownChunker:
                 element_number=chunk.element_number,
                 chunk_role=chunk.chunk_role,
                 definition_ref_id=chunk.definition_ref_id,
+                citation_label=chunk.citation_label,
                 na_concepts=chunk.na_concepts,
                 keywords=chunk.keywords,
                 paragraph_index=chunk.paragraph_index,
@@ -408,17 +410,29 @@ class MarkdownChunker:
         return parts
 
     @staticmethod
+    def _clean_heading(text: str) -> str:
+        return re.sub(r'\s*#+\s*', ' ', text).strip()
+
+    @staticmethod
     def _build_citation_label(hierarchy: dict) -> str:
+        book = hierarchy.get("book_title", "")
+        chapter = MarkdownChunker._clean_heading(hierarchy["chapter"]) if hierarchy.get("chapter") else None
+        section = MarkdownChunker._clean_heading(hierarchy["section"]) if hierarchy.get("section") else None
+
+        if book and chapter and book.endswith(chapter):
+            return book
+
         parts = []
-        if hierarchy.get("chapter"):
-            parts.append(f"Глава «{hierarchy['chapter']}»")
-        if hierarchy.get("section"):
-            sec = hierarchy["section"]
-            if any(sec.lower().startswith(p) for p in ("шаг", "глава", "традици", "книга")):
-                parts.append(sec)
+        if book:
+            parts.append(book)
+        if chapter:
+            parts.append(f"Глава «{chapter}»")
+        if section:
+            if any(section.lower().startswith(p) for p in ("шаг", "глава", "традици", "книга")):
+                parts.append(section)
             else:
-                parts.append(f"Раздел «{sec}»")
-        return ", ".join(parts) if parts else hierarchy.get("book_title", "")
+                parts.append(f"Раздел «{section}»")
+        return ", ".join(parts) if parts else book
 
     @staticmethod
     def _estimate_tokens(text: str) -> int:
