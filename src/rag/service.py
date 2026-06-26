@@ -253,15 +253,15 @@ class RAGService:
                             r.content = f"[Определение]\n{def_content}\n\n{r.content}"
                             break
 
-        # dedup by (source, page), skip definition chunks (already merged into body chunks)
+        # ponytail: page metadata never populated, so (source, page) dedup collapses everything.
+        # Dedup by chunk_id instead.
         seen = set()
         deduped = []
         for r in chunk_results:
             if expand_definitions and (r.metadata or {}).get("chunk_role") == "definition":
                 continue
-            key = (r.source, r.page)
-            if key not in seen:
-                seen.add(key)
+            if r.chunk_id not in seen:
+                seen.add(r.chunk_id)
                 deduped.append(r)
 
         log_call_flow(f"RAG query returned {len(deduped)} results (deduped from {len(chunk_results)})")
