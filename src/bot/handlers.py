@@ -169,7 +169,7 @@ async def handle_text(message: Message):
 
         # Обработка по категориям
         if category == QueryCategory.GREETING:
-            response = "👋 Привет! Я RAG-бот с литературой АН. Задайте вопрос по теме выздоровления."
+            response = "👋 Привет! Задайте вопрос по теме выздоровления."
             await message.answer(response)
             return
 
