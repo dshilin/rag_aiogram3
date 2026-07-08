@@ -7,6 +7,7 @@ TargetMDDirectory/
 
 #Agents
 .gigacode
+.claude/
 
 # Python
 __pycache__/
