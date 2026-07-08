@@ -26,7 +26,7 @@ async def test_chat_greeting(client):
         assert response.status_code == 200
         data = response.json()
         assert data["category"] == "greeting"
-        assert "RAG-бот" in data["reply"]
+        assert "Задайте вопрос" in data["reply"]
 
 
 @pytest.mark.asyncio
@@ -64,7 +64,7 @@ async def test_chat_greeting_exact_reply(client):
         assert response.status_code == 200
         data = response.json()
         assert data["category"] == "greeting"
-        assert "RAG-бот" in data["reply"]
+        assert "Задайте вопрос" in data["reply"]
 
 
 @pytest.mark.asyncio

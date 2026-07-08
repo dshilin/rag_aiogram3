@@ -42,11 +42,12 @@ def test_build_model_uri_fails_without_folder(monkeypatch):
 
 def test_ask_sends_correct_payload(monkeypatch):
     monkeypatch.setattr(settings, "yandex_folder_id", "folder123")
-    monkeypatch.setattr(settings, "yandex_api_key", "token")
+    # API-ключ сервисного аккаунта (AQVN...) → заголовок Api-Key, без обмена на IAM
+    monkeypatch.setattr(settings, "yandex_api_key", "AQVN-test-key")
 
     captured = {}
 
-    def fake_post(url, headers, json, timeout):
+    def fake_post(url, headers=None, json=None, timeout=None):
         captured['url'] = url
         captured['headers'] = headers
         captured['json'] = json
@@ -63,12 +64,63 @@ def test_ask_sends_correct_payload(monkeypatch):
 
     assert result == "ok"
     assert captured['json']['modelUri'] == "gpt://folder123/yandexgpt-lite/latest"
-    assert captured['headers']['Authorization'] == "Bearer token"
+    assert captured['headers']['Authorization'] == "Api-Key AQVN-test-key"
 
     # проверяем, что явный URI сохраняется
     client2 = YandexGPTClient(model="gpt://folder123/custom/v2")
     result2 = client2.ask("hi")
     assert captured['json']['modelUri'] == "gpt://folder123/custom/v2"
+
+
+def test_oauth_token_exchanged_for_iam(monkeypatch):
+    monkeypatch.setattr(settings, "yandex_folder_id", "folder123")
+    # OAuth-токен (y0_...) → сначала обмен на IAM-токен, затем Bearer
+    monkeypatch.setattr(settings, "yandex_api_key", "y0_oauth_token")
+
+    calls = []
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        calls.append(url)
+        if "iam.api.cloud.yandex.net" in url:
+            assert json == {"yandexPassportOauthToken": "y0_oauth_token"}
+            return DummyResponse(ok=True, json_data={"iamToken": "t1.iam-token"})
+        assert headers['Authorization'] == "Bearer t1.iam-token"
+        return DummyResponse(
+            ok=True,
+            json_data={"result": {"alternatives": [{"message": {"text": "ok"}}]}}
+        )
+
+    monkeypatch.setattr(requests, "post", fake_post)
+
+    client = YandexGPTClient()
+    assert client.ask("hello") == "ok"
+    assert calls[0].startswith("https://iam.api.cloud.yandex.net")
+
+    # второй запрос использует кэшированный IAM-токен — обмена больше нет
+    assert client.ask("again") == "ok"
+    assert sum("iam.api.cloud.yandex.net" in c for c in calls) == 1
+
+
+def test_ready_iam_token_used_directly(monkeypatch):
+    monkeypatch.setattr(settings, "yandex_folder_id", "folder123")
+    # Готовый IAM-токен (t1....) → Bearer как есть, без обмена
+    monkeypatch.setattr(settings, "yandex_api_key", "t1.ready-token")
+
+    calls = []
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        calls.append(url)
+        assert headers['Authorization'] == "Bearer t1.ready-token"
+        return DummyResponse(
+            ok=True,
+            json_data={"result": {"alternatives": [{"message": {"text": "ok"}}]}}
+        )
+
+    monkeypatch.setattr(requests, "post", fake_post)
+
+    client = YandexGPTClient()
+    assert client.ask("hello") == "ok"
+    assert len(calls) == 1
 
 
 def test_ask_reports_unconfigured(monkeypatch):

@@ -1,4 +1,4 @@
-import uuid
+import asyncio
 from pathlib import Path
 from typing import Optional
 from fastapi import APIRouter
@@ -32,9 +32,15 @@ try:
         max_tokens=settings.llm_max_tokens,
     )
     USE_LLM = True
-except (ValueError, Exception):
+except Exception as e:
+    logger.warning(f"LLM клиент не инициализирован ({e}) — веб-чат работает в режиме поиска без генерации")
     llm_client = None
     USE_LLM = False
+
+
+def _session_key(session_id: str) -> str:
+    # неймспейс "web:" исключает пересечение с Telegram user_id в общем SessionManager
+    return f"web:{session_id}"
 
 
 class ChatRequest(BaseModel):
@@ -59,8 +65,7 @@ class NewSessionResponse(BaseModel):
 @router.post("/api/session/new", response_model=NewSessionResponse)
 async def new_session(req: NewSessionRequest):
     try:
-        user_id = abs(hash(req.session_id))
-        session_manager.start_new_session(user_id)
+        session_manager.start_new_session(_session_key(req.session_id))
         return NewSessionResponse(success=True)
     except Exception as e:
         logger.error(f"Error starting new session: {e}")
@@ -76,11 +81,12 @@ async def index():
 @router.post("/api/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
     try:
-        user_id = abs(hash(req.session_id))
+        user_id = _session_key(req.session_id)
         query = req.message
 
         if USE_LLM and llm_client:
-            category = classify_query(llm_client, query)
+            # to_thread: внутри синхронный requests — не блокируем event loop
+            category = await asyncio.to_thread(classify_query, llm_client, query)
 
             if category == QueryCategory.GREETING:
                 return ChatResponse(
@@ -111,7 +117,9 @@ async def chat(req: ChatRequest):
         sources = []
 
         if USE_LLM and llm_client:
-            results = get_rag_service().query_with_metadata(query, top_k=5)
+            results = await asyncio.to_thread(
+                lambda: get_rag_service().query_with_metadata(query, top_k=5)
+            )
 
             if results:
                 context_parts = []
@@ -127,14 +135,21 @@ async def chat(req: ChatRequest):
 
                 context = "\n\n---\n\n".join(context_parts)
 
-                answer = llm_client.ask(
-                    question=query,
-                    context=context,
-                    sources=[s["source"] for s in sources],
-                    conversation_history=session_history,
+                answer = await asyncio.to_thread(
+                    lambda: llm_client.ask(
+                        question=query,
+                        context=context,
+                        sources=[s["source"] for s in sources],
+                        conversation_history=session_history,
+                    )
                 )
 
                 response = answer
+
+                # Сохраняем в сессию только успешные ответы —
+                # отказы и «не нашёл» не должны попадать в контекст диалога
+                session_manager.add_message(user_id, "user", query)
+                session_manager.add_message(user_id, "assistant", response)
             else:
                 response = (
                     "😕 Не нашел информацию по вашему запросу в литературе АН.\n\n"
@@ -144,7 +159,7 @@ async def chat(req: ChatRequest):
                     "• Книге «Это работает – как и почему»"
                 )
         else:
-            result = get_rag_service().query(query)
+            result = await asyncio.to_thread(lambda: get_rag_service().query(query))
             if result:
                 response = f"💡 Ответ:\n\n{result}"
             else:
@@ -153,13 +168,10 @@ async def chat(req: ChatRequest):
                     "Попробуйте переформулировать вопрос или добавьте больше документов в базу знаний."
                 )
 
-        session_manager.add_message(user_id, "user", query)
-        session_manager.add_message(user_id, "assistant", response)
-
         return ChatResponse(reply=response, category="an_question", sources=sources if USE_LLM else None)
-    except Exception as e:
-        logger.error(f"Error processing message: {e}")
+    except Exception:
+        logger.exception("Error processing message")
         return ChatResponse(
-            reply=f"⚠️ Произошла ошибка: {str(e)}",
+            reply="⚠️ Произошла внутренняя ошибка. Попробуйте ещё раз позже.",
             category="an_question",
         )

@@ -188,8 +188,8 @@ class RAGService:
             ]
             logger.info(f"⏳ Эмбеддинг батч {i//batch_size + 1}/{(len(texts)-1)//batch_size + 1} ({len(batch_texts)} чанков)...")
             self.vectorstore.add_documents(documents)
-            self._save_index()
             logger.info(f"✅ Батч {i//batch_size + 1} готов")
+        self._save_index()
         logger.info(f"✅ Закончен эмбеддинг всех {len(texts)} чанков")
         log_call_flow(f"Successfully added {len(texts)} documents")
 
@@ -241,7 +241,9 @@ class RAGService:
                 )
             )
 
-        chunk_results.sort(key=lambda x: x.score, reverse=True)
+        # score — это L2-расстояние из IndexFlatL2: меньше = релевантнее,
+        # поэтому сортируем по возрастанию
+        chunk_results.sort(key=lambda x: x.score)
 
         # ponytail: fixed 0.15 boost + Jaccard-like overlap. Switch to weighted BM25-style reranking if precision at top-1 matters.
         from src.rag.docx_parser import _extract_keywords
@@ -253,8 +255,9 @@ class RAGService:
                 overlap = query_keywords & chunk_kw
                 if overlap:
                     overlap_score = len(overlap) / max(len(query_keywords), len(chunk_kw))
-                    r.score += KEYWORD_BOOST * overlap_score
-            chunk_results.sort(key=lambda x: x.score, reverse=True)
+                    # буст уменьшает расстояние — чанк с пересечением ключевых слов поднимается выше
+                    r.score -= KEYWORD_BOOST * overlap_score
+            chunk_results.sort(key=lambda x: x.score)
 
         # expand definitions before dedup
         if expand_definitions and self.vectorstore:

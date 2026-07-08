@@ -5,14 +5,13 @@
 Анонимных Наркоманов.
 """
 
-import os
 from typing import Optional, List
 
 from openai import OpenAI
 from loguru import logger
 
 from src.core.config import settings
-from src.llm.base import LLMClient, SYSTEM_PROMPT_AN
+from src.llm.base import LLMClient
 from src.utils.logging import trace, log_call_flow
 
 
@@ -114,17 +113,3 @@ class OpenAIClient(LLMClient):
         except Exception as e:
             logger.error(f"OpenAI error: {e}")
             return f"⚠️ Ошибка OpenAI: {str(e)}"
-
-
-# Глобальный экземпляр клиента (создается при импорте)
-def _create_default_openai_client() -> Optional[OpenAIClient]:
-    """Создать клиент по умолчанию, если API ключ настроен"""
-    try:
-        if settings.openai_api_key:
-            return OpenAIClient()
-    except Exception:
-        pass
-    return None
-
-
-openai_client = _create_default_openai_client()

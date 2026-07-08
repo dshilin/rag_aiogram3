@@ -122,7 +122,3 @@ class VseGPTClient(LLMClient):
         except KeyError as e:
             logger.error(f"VseGPT response parsing error: {e}")
             return f"⚠️ Ошибка обработки ответа VseGPT.ru: {str(e)}"
-
-
-# Глобальный экземпляр клиента
-vsegpt = VseGPTClient()
