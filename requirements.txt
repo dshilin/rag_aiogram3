@@ -19,6 +19,8 @@ python-docx>=1.1.0
 
 # NLP for keywords extraction
 natasha>=1.6.0
+# pkg_resources removed in setuptools>=81, pymorphy2 still needs it
+setuptools<81
 
 # Embeddings (CPU-only, без CUDA)
 --extra-index-url https://download.pytorch.org/whl/cpu

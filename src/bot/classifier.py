@@ -83,26 +83,16 @@ class QueryClassifier:
                 system_prompt=CLASSIFIER_SYSTEM_PROMPT,
             )
 
-            # Ищем первую категорию в ответе LLM
-            # LLM может добавлять пояснения после категории
-            response_lower = response.lower()
+            # Берём только первую строку ответа LLM
+            # (YandexGPT часто добавляет пояснения с новых строк)
+            first_line = response.strip().split('\n')[0].strip().lower().rstrip('.,!?;:')
             
-            # Порядок важен: проверяем более длинные категории первыми
-            categories_to_check = [
-                "help_request",
-                "an_question",
-                "off_topic",
-                "greeting",
-            ]
-            
-            for cat in categories_to_check:
-                if cat in response_lower:
-                    category = QueryCategory(cat)
-                    log_call_flow(f"Query classified as: {category.value}")
-                    return category
-            
-            # Если ни одна категория не найдена — fallback
-            log_call_flow("No category found in response, using fallback")
+            if first_line in ("greeting", "help_request", "off_topic", "an_question"):
+                category = QueryCategory(first_line)
+                log_call_flow(f"Query classified as: {category.value}")
+                return category
+
+            log_call_flow(f"No valid category in first line ('{first_line}'), using fallback")
             return QueryCategory.AN_QUESTION
 
         except Exception as e:
