@@ -89,6 +89,23 @@ class TestSplitIntoParagraphs:
         assert chunker.split_into_paragraphs("   \n\n  ") == []
 
 
+class TestCleanHeading:
+    def test_plain_text_unchanged(self):
+        assert MarkdownChunker._clean_heading("Шаг Первый") == "Шаг Первый"
+
+    def test_leading_hash_stripped(self):
+        assert MarkdownChunker._clean_heading("# Шаг Первый") == "Шаг Первый"
+
+    def test_inline_hash_cleaned(self):
+        assert MarkdownChunker._clean_heading("КНИГА ВТОРАЯ ## Двенадцать Традиций") == "КНИГА ВТОРАЯ Двенадцать Традиций"
+
+    def test_multiple_hashes(self):
+        assert MarkdownChunker._clean_heading("### Раздел") == "Раздел"
+
+    def test_empty_string(self):
+        assert MarkdownChunker._clean_heading("") == ""
+
+
 class TestEstimateTokens:
     def test_simple_text(self):
         assert MarkdownChunker._estimate_tokens("один два три") == 3
@@ -164,6 +181,19 @@ class TestChunkMd:
         body_chunks = [c for c in chunks if c.chunk_role == "body"]
         assert len(body_chunks) > 1
 
+    def test_split_chunks_retain_citation_label(self, tmp_path):
+        long_text = "Предложение. " * 2000
+        md_file = tmp_path / "test.md"
+        md_file.write_text(
+            "# Тестовая Глава\n\n" + long_text,
+            encoding="utf-8",
+        )
+        chunker = MarkdownChunker()
+        chunks, stats = chunker.chunk_md(md_file)
+        for c in chunks:
+            assert "Тестовая Глава" in c.citation_label
+            assert c.citation_label != "TBD"
+
     def test_na_concepts_detected_in_chunk(self, tmp_path):
         md_file = tmp_path / "test.md"
         md_file.write_text(
@@ -185,7 +215,7 @@ class TestChunkMd:
         )
         chunker = MarkdownChunker()
         chunks, stats = chunker.chunk_md(md_file)
-        assert "Глава" in chunks[0].citation_label
+        assert "test" in chunks[0].citation_label
         assert "Шаг Первый" in chunks[0].citation_label
         assert "Бессилие" in chunks[0].citation_label
 
@@ -198,7 +228,21 @@ class TestChunkMd:
         )
         chunker = MarkdownChunker()
         chunks, stats = chunker.chunk_md(md_file)
-        assert chunks[0].citation_label == "Глава «Введение»"
+        assert chunks[0].citation_label == "test, Глава «Введение»"
+
+    def test_citation_label_cleans_markdown_artifacts(self, tmp_path):
+        md_file = tmp_path / "test.md"
+        md_file.write_text(
+            "# КНИГА ВТОРАЯ ## Двенадцать Традиций\n\n"
+            "## Традиция Вторая\n\n"
+            "Текст традиции.",
+            encoding="utf-8",
+        )
+        chunker = MarkdownChunker()
+        chunks, stats = chunker.chunk_md(md_file)
+        assert "##" not in chunks[0].citation_label
+        assert "КНИГА ВТОРАЯ" in chunks[0].citation_label
+        assert "Традиция Вторая" in chunks[0].citation_label
 
     def test_to_dict_includes_all_metadata(self, tmp_path):
         md_file = tmp_path / "test.md"

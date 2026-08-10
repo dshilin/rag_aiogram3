@@ -1,3 +1,5 @@
+import asyncio
+
 from aiogram import Router, F
 from aiogram.types import Message, ReplyKeyboardRemove
 from aiogram.filters import Command
@@ -48,7 +50,8 @@ try:
         max_tokens=max_tokens,
     )
     USE_LLM = True
-except (ValueError, Exception) as e:
+except Exception as e:
+    logger.warning(f"LLM клиент не инициализирован ({e}) — бот работает в режиме поиска без генерации")
     llm_client = None
     USE_LLM = False
 
@@ -164,12 +167,13 @@ async def handle_text(message: Message):
 
     # Классификация запроса (если LLM доступен)
     if USE_LLM and llm_client:
-        category = classify_query(llm_client, query)
+        # to_thread: внутри синхронный requests — не блокируем event loop
+        category = await asyncio.to_thread(classify_query, llm_client, query)
         log_call_flow(f"Query category: {category.value}")
 
         # Обработка по категориям
         if category == QueryCategory.GREETING:
-            response = "👋 Привет! Я RAG-бот с литературой АН. Задайте вопрос по теме выздоровления."
+            response = "👋 Привет! Задайте вопрос по теме выздоровления."
             await message.answer(response)
             return
 
@@ -198,8 +202,10 @@ async def handle_text(message: Message):
 
     try:
         if USE_LLM and llm_client:
-            # Поиск релевантных чанков в RAG
-            results = get_rag_service().query_with_metadata(query, top_k=5, score_threshold=0.3)
+            # Поиск релевантных чанков в RAG (эмбеддинг запроса — CPU-bound, уводим из event loop)
+            results = await asyncio.to_thread(
+                lambda: get_rag_service().query_with_metadata(query, top_k=5)
+            )
 
             if results:
                 # Формируем контекст из найденных чанков
@@ -207,28 +213,30 @@ async def handle_text(message: Message):
                 sources = []
 
                 for chunk in results:
+                    label = chunk.citation_label
                     context_parts.append(
-                        f"[Источник: {chunk.source}, стр. {chunk.page}]\n{chunk.content}"
+                        f"[Источник: {label}]\n{chunk.content}"
                     )
-                    sources.append(f"{chunk.source} (стр. {chunk.page})")
+                    sources.append(label)
 
                 context = "\n\n---\n\n".join(context_parts)
 
                 # Запрос к LLM с системным промтом АН и историей диалога
-                answer = llm_client.ask(
-                    question=query,
-                    context=context,
-                    sources=sources,
-                    conversation_history=session_history,
+                answer = await asyncio.to_thread(
+                    lambda: llm_client.ask(
+                        question=query,
+                        context=context,
+                        sources=sources,
+                        conversation_history=session_history,
+                    )
                 )
 
-                # Добавляем источники
-                if sources:
-                    sources_text = "\n\n📚 **Источники:**\n"
-                    sources_text += "\n".join(f"• {src}" for src in sources)
-                    answer += sources_text
-
                 response = answer
+
+                # Сохраняем в сессию только успешные ответы по теме АН —
+                # отказы и «не нашёл» не должны попадать в контекст диалога
+                session_manager.add_message(user_id, "user", query)
+                session_manager.add_message(user_id, "assistant", response)
             else:
                 response = (
                     "😕 Не нашел информацию по вашему запросу в литературе АН.\n\n"
@@ -239,7 +247,7 @@ async def handle_text(message: Message):
                 )
         else:
             # Режим без LLM (только RAG поиск)
-            result = get_rag_service().query(query)
+            result = await asyncio.to_thread(lambda: get_rag_service().query(query))
 
             if result:
                 response = f"💡 Ответ:\n\n{result}"
@@ -249,14 +257,10 @@ async def handle_text(message: Message):
                     "Попробуйте переформулировать вопрос или добавьте больше документов в базу знаний."
                 )
 
-        # Сохраняем в сессию только вопросы по теме АН
-        session_manager.add_message(user_id, "user", query)
-        session_manager.add_message(user_id, "assistant", response)
-
         await message.answer(response)
-    except Exception as e:
-        logger.error(f"Error processing message: {e}")
-        await message.answer(f"⚠️ Произошла ошибка: {str(e)}")
+    except Exception:
+        logger.exception("Error processing message")
+        await message.answer("⚠️ Произошла внутренняя ошибка. Попробуйте ещё раз позже.")
 
 
 @router.message(F.document)

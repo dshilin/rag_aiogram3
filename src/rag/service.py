@@ -1,4 +1,5 @@
 import json
+import re
 import shutil
 from dataclasses import dataclass
 from datetime import datetime
@@ -28,6 +29,20 @@ class ChunkResult:
     chunk_id: str
     score: float = 0.0
     metadata: dict = None
+
+    @property
+    def citation_label(self) -> str:
+        meta_label = (self.metadata or {}).get("citation_label")
+        if not meta_label or meta_label == "TBD":
+            return self.source
+        cleaned = re.sub(r'\s*#+\s*', ' ', meta_label).strip()
+        # ponytail: strip trailing chunk text after `> «` — that's the body, not the heading
+        idx = cleaned.find("> «")
+        if idx != -1:
+            cleaned = cleaned[:idx].rstrip(" ,>»")
+        if self.source.lower() in cleaned.lower():
+            return cleaned
+        return f"{self.source}, {cleaned}" if cleaned else self.source
 
     def to_dict(self) -> dict:
         """Конвертировать в словарь"""
@@ -173,8 +188,8 @@ class RAGService:
             ]
             logger.info(f"⏳ Эмбеддинг батч {i//batch_size + 1}/{(len(texts)-1)//batch_size + 1} ({len(batch_texts)} чанков)...")
             self.vectorstore.add_documents(documents)
-            self._save_index()
             logger.info(f"✅ Батч {i//batch_size + 1} готов")
+        self._save_index()
         logger.info(f"✅ Закончен эмбеддинг всех {len(texts)} чанков")
         log_call_flow(f"Successfully added {len(texts)} documents")
 
@@ -194,7 +209,7 @@ class RAGService:
         self,
         question: str,
         top_k: Optional[int] = None,
-        score_threshold: float = 0.0,
+        score_threshold: float = 2.0,
         metadata_filter: Optional[dict] = None,
         expand_definitions: bool = True,
     ) -> list[ChunkResult]:
@@ -213,7 +228,7 @@ class RAGService:
             if metadata_filter:
                 if not all(meta.get(k) == v for k, v in metadata_filter.items()):
                     continue
-            if score < score_threshold:
+            if score > score_threshold:
                 continue
             chunk_results.append(
                 ChunkResult(
@@ -226,7 +241,9 @@ class RAGService:
                 )
             )
 
-        chunk_results.sort(key=lambda x: x.score, reverse=True)
+        # score — это L2-расстояние из IndexFlatL2: меньше = релевантнее,
+        # поэтому сортируем по возрастанию
+        chunk_results.sort(key=lambda x: x.score)
 
         # ponytail: fixed 0.15 boost + Jaccard-like overlap. Switch to weighted BM25-style reranking if precision at top-1 matters.
         from src.rag.docx_parser import _extract_keywords
@@ -238,8 +255,9 @@ class RAGService:
                 overlap = query_keywords & chunk_kw
                 if overlap:
                     overlap_score = len(overlap) / max(len(query_keywords), len(chunk_kw))
-                    r.score += KEYWORD_BOOST * overlap_score
-            chunk_results.sort(key=lambda x: x.score, reverse=True)
+                    # буст уменьшает расстояние — чанк с пересечением ключевых слов поднимается выше
+                    r.score -= KEYWORD_BOOST * overlap_score
+            chunk_results.sort(key=lambda x: x.score)
 
         # expand definitions before dedup
         if expand_definitions and self.vectorstore:
@@ -253,15 +271,15 @@ class RAGService:
                             r.content = f"[Определение]\n{def_content}\n\n{r.content}"
                             break
 
-        # dedup by (source, page), skip definition chunks (already merged into body chunks)
+        # ponytail: page metadata never populated, so (source, page) dedup collapses everything.
+        # Dedup by chunk_id instead.
         seen = set()
         deduped = []
         for r in chunk_results:
             if expand_definitions and (r.metadata or {}).get("chunk_role") == "definition":
                 continue
-            key = (r.source, r.page)
-            if key not in seen:
-                seen.add(key)
+            if r.chunk_id not in seen:
+                seen.add(r.chunk_id)
                 deduped.append(r)
 
         log_call_flow(f"RAG query returned {len(deduped)} results (deduped from {len(chunk_results)})")

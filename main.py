@@ -1,4 +1,5 @@
 import asyncio
+import os
 from pathlib import Path
 
 from loguru import logger
@@ -24,8 +25,18 @@ async def main():
     set_request_id(generate_request_id())
     setup_logging()
 
+    # Предзагрузка RAG (эмбеддинги + FAISS индекс)
+    try:
+        from src.web.router import get_rag_service
+        rag = get_rag_service()
+        count = rag.get_document_count()
+        logger.info(f"✅ RAG загружен: {count} чанков")
+    except Exception as e:
+        logger.warning(f"⚠️ RAG предзагрузка не удалась: {e}")
+
     # FastAPI web server
-    config = uvicorn.Config(app, host="0.0.0.0", port=8080, log_level="info")
+    web_port = int(os.getenv("WEB_PORT", "8080"))
+    config = uvicorn.Config(app, host="0.0.0.0", port=web_port, log_level="info")
     server = uvicorn.Server(config)
 
     # Telegram bot
@@ -41,7 +52,7 @@ async def main():
             server.serve(),
         )
     except asyncio.TimeoutError:
-        logger.warning("Telegram API недоступен, запущен только веб-сервер на порту 8080")
+        logger.warning(f"Telegram API недоступен, запущен только веб-сервер на порту {web_port}")
         await server.serve()
     except Exception as e:
         logger.warning(f"Ошибка подключения к Telegram: {e}. Запущен только веб-сервер.")

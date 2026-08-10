@@ -62,7 +62,7 @@ cp .env.example .env
 | `CHUNK_SIZE` | Размер чанка | 500 |
 | `CHUNK_OVERLAP` | Перекрытие чанков | 50 |
 | `TOP_K` | Количество результатов поиска | 3 |
-| `EMBEDDING_MODEL` | Модель эмбеддингов | all-MiniLM-L6-v2 |
+| `EMBEDDING_MODEL` | Модель эмбеддингов (должна совпадать с моделью, которой построен индекс) | distiluse-base-multilingual-cased-v2 |
 | `LLM_PROVIDER` | LLM провайдер (`openai`, `yandex`, `vsegpt`) | - |
 | `LLM_MODEL` | Название модели | gpt-3.5-turbo |
 | `LLM_TEMPERATURE` | Температура генерации | 0.3 |
@@ -71,7 +71,7 @@ cp .env.example .env
 | `YANDEX_API_KEY` | API ключ Yandex | - |
 | `YANDEX_FOLDER_ID` | Folder ID Yandex Cloud | - |
 | `VSEGPT_API_KEY` | API ключ VseGPT | - |
-| `TELEGRAM_BOT_TOKEN` | Токен Telegram бота | - |
+| `BOT_TOKEN` | Токен Telegram бота | - |
 
 ### Выбор LLM провайдера
 
@@ -295,7 +295,7 @@ pytest tests/test_yandex_gpt_client.py -v
 - **aiogram 3** — фреймворк для Telegram ботов
 - **LangChain** — работа с RAG
 - **FAISS** — векторное хранилище (CPU)
-- **HuggingFace** — эмбеддинги (all-MiniLM-L6-v2)
+- **HuggingFace** — эмбеддинги (мультиязычные модели, напр. intfloat/multilingual-e5-base)
 - **PyMuPDF** — обработка PDF
 - **loguru** — логирование
 - **OpenAI API** — LLM провайдер

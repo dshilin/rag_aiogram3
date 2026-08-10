@@ -57,8 +57,11 @@ def trace(func):
 
 
 def setup_logging():
+    # импорт внутри функции — чтобы модуль логирования не зависел от конфига при импорте
+    from src.core.config import settings
+
     logger.remove()
-    logger.add(sys.stdout, format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | <magenta>{extra[request_id]}</magenta> - <level>{message}</level>", level="DEBUG", filter=_add_request_id)
+    logger.add(sys.stdout, format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | <magenta>{extra[request_id]}</magenta> - <level>{message}</level>", level=settings.log_level.upper(), filter=_add_request_id)
     logger.add("logs/errors_{time:YYYY-MM-DD}.log", format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} | {extra[request_id]} | {message}", level="ERROR", rotation="10 MB", retention="30 days", compression="zip", filter=_add_request_id)
     return logger
 

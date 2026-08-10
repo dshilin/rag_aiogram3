@@ -3,10 +3,14 @@
 .venv/
 venv/
 
+# Deploy script with server credentials
+deploy.py
+
 TargetMDDirectory/
 
 #Agents
 .gigacode
+.claude/
 
 # Python
 __pycache__/

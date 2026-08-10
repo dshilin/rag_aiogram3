@@ -42,7 +42,7 @@ def format_citation(result: ChunkResult, rank: int) -> str:
     """
     lines = [
         f"\n{'─' * 60}",
-        f"📌 **Результат #{rank}** (релевантность: {result.score:.4f})",
+        f"📌 **Результат #{rank}** (расстояние: {result.score:.4f}, меньше = релевантнее)",
         f"",
         f"📚 **Источник**: `{result.source}`",
         f"📑 **Страница**: {result.page}",
@@ -90,7 +90,7 @@ def search_query(
     query: str,
     rag_service: RAGService,
     top_k: int = 5,
-    score_threshold: float = 0.0,
+    score_threshold: float = 2.0,
     verbose: bool = False,
 ) -> list[ChunkResult]:
     """
@@ -100,7 +100,8 @@ def search_query(
         query: Запрос пользователя
         rag_service: RAG сервис
         top_k: Количество результатов
-        score_threshold: Порог схожести
+        score_threshold: Максимальное L2-расстояние (меньше = релевантнее;
+            результаты с расстоянием выше порога отбрасываются)
         verbose: Показывать подробную информацию
 
     Returns:
@@ -144,12 +145,12 @@ def interactive_search(rag_service: RAGService, top_k: int = 5):
     print("Команды:")
     print("  quit, exit, q - выход")
     print("  k=N - изменить количество результатов (например, k=10)")
-    print("  t=N - изменить порог схожести (например, t=0.5)")
+    print("  t=N - изменить макс. расстояние (меньше = строже, например, t=0.9)")
     print("=" * 60)
     print()
 
     current_top_k = top_k
-    current_threshold = 0.0
+    current_threshold = 2.0
 
     while True:
         try:
@@ -231,8 +232,8 @@ def main():
     parser.add_argument(
         "--threshold", "-t",
         type=float,
-        default=0.0,
-        help="Порог схожести (по умолчанию: 0.0)",
+        default=2.0,
+        help="Максимальное L2-расстояние, меньше = строже (по умолчанию: 2.0)",
     )
     parser.add_argument(
         "--verbose", "-v",

@@ -1,3 +1,4 @@
+import time
 import requests
 from typing import Optional, List
 from loguru import logger
@@ -5,6 +6,8 @@ from loguru import logger
 from src.core.config import settings
 from src.llm.base import LLMClient
 from src.utils.logging import trace, log_call_flow
+
+_IAM_TOKEN_TTL = 11 * 3600  # ponytail: IAM TTL ~12h, refresh early
 
 
 class YandexGPTClient(LLMClient):
@@ -46,6 +49,41 @@ class YandexGPTClient(LLMClient):
             system_prompt=system_prompt,
         )
         self.api_url = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
+        self._iam_token = None
+        self._iam_issued = 0
+
+    def _get_iam_token(self) -> str:
+        """Обменивает OAuth-токен Яндекс.Паспорта на IAM-токен (кэшируется до истечения TTL).
+
+        Работает только для OAuth-токенов (y0_..., AgAAAA...) — API-ключи
+        сервисных аккаунтов этот эндпоинт не принимает.
+        """
+        if self._iam_token and (time.monotonic() - self._iam_issued) < _IAM_TOKEN_TTL:
+            return self._iam_token
+        resp = requests.post(
+            "https://iam.api.cloud.yandex.net/iam/v1/tokens",
+            json={"yandexPassportOauthToken": settings.yandex_api_key},
+            timeout=15,
+        )
+        if not resp.ok:
+            raise RuntimeError(f"IAM token exchange failed: {resp.status_code} {resp.text}")
+        self._iam_token = resp.json()["iamToken"]
+        self._iam_issued = time.monotonic()
+        return self._iam_token
+
+    def _build_auth_header(self) -> str:
+        """Формирует заголовок Authorization по типу ключа в YANDEX_API_KEY:
+
+        - ``AQVN...`` — API-ключ сервисного аккаунта → ``Api-Key <key>``
+        - ``y0_...`` / ``AgAAAA...`` — OAuth-токен → обмен на IAM-токен → ``Bearer <iam>``
+        - ``t1....`` — готовый IAM-токен → ``Bearer <token>``
+        """
+        key = settings.yandex_api_key
+        if key.startswith("t1."):
+            return f"Bearer {key}"
+        if key.startswith(("y0_", "AgAAAA")):
+            return f"Bearer {self._get_iam_token()}"
+        return f"Api-Key {key}"
 
     @property
     def provider_name(self) -> str:
@@ -77,6 +115,7 @@ class YandexGPTClient(LLMClient):
         context: Optional[str] = None,
         sources: Optional[list[str]] = None,
         conversation_history: Optional[List[dict]] = None,
+        system_prompt: Optional[str] = None,
     ) -> str:
         """
         Отправить запрос к YandexGPT
@@ -99,8 +138,14 @@ class YandexGPTClient(LLMClient):
         prompt = self._build_prompt(question, context, sources, conversation_history)
         log_call_flow(f"Built prompt: '{prompt[:50]}...'")
 
+        try:
+            auth_header = self._build_auth_header()
+        except RuntimeError as e:
+            logger.error(str(e))
+            return f"⚠️ Ошибка получения IAM-токена YandexGPT: {str(e)}"
+
         headers = {
-            "Authorization": f"Bearer {settings.yandex_api_key}",
+            "Authorization": auth_header,
             "Content-Type": "application/json",
         }
 
@@ -115,8 +160,7 @@ class YandexGPTClient(LLMClient):
         # Формируем сообщения для API
         messages = []
         
-        # Добавляем системный промт
-        messages.append({"role": "system", "text": self.system_prompt})
+        messages.append({"role": "system", "text": self._get_system_prompt(system_prompt)})
         
         # Добавляем историю диалога, если есть
         if conversation_history:
@@ -175,7 +219,3 @@ class YandexGPTClient(LLMClient):
         except KeyError as e:
             logger.error(f"YandexGPT response parsing error: {e}")
             return f"⚠️ Ошибка обработки ответа YandexGPT: {str(e)}"
-
-
-# Глобальный экземпляр клиента
-yandex_gpt = YandexGPTClient()
